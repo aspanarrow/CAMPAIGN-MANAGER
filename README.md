@@ -40,6 +40,12 @@ shopify-marketing-ai/
 ## ⚡ Quick start (one command)
 
 ```bash
+# If NODE_ENV=production is set, npm skips devDependencies — always use:
+npm install --include=dev
+
+# Local DB + Redis (optional if you have local Postgres/Redis):
+docker compose up -d
+
 ./scripts/manage.sh doctor   # check prerequisites
 ./scripts/manage.sh start    # backend + frontend + worker + scheduler
 ./scripts/manage.sh status   # what's running + Shopify token age
@@ -53,12 +59,19 @@ The Shopify access token expires every 24h — refresh it with:
 ./scripts/manage.sh token
 ```
 
+## 🌐 Environment variables
+
+Copy `backend/.env.example` to `backend/.env` and fill in your values.
+**All** variables the code reads are documented there (AI provider, Meta pixel,
+notifications, etc.). The store URL in the example is `rqukgw-tx.myshopify.com`
+— change it to your own store handle.
+
 
 ## 📋 Prerequisites
 
 - Node.js 20+ and npm/yarn
-- PostgreSQL 15+
-- Redis 7+
+- PostgreSQL 15+ (or `docker compose up -d postgres redis`)
+- Redis 7+ (or `docker compose up -d postgres redis`)
 - API credentials for:
   - Shopify Admin API
   - Meta Business Suite

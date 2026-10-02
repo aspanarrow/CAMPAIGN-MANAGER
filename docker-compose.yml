@@ -1,0 +1,45 @@
+# One-command local stack for Glowify Marketing AI (gap analysis M4)
+#
+# Usage:
+#   docker compose up -d
+#   # then: ./scripts/manage.sh start   (backend + frontend + worker + scheduler)
+#
+# Ports match backend/.env.example defaults (Postgres 5432, Redis 6379).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: glowify-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: shopify_marketing_ai
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d shopify_marketing_ai"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: glowify-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:
+  redisdata:
