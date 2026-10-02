@@ -3,14 +3,29 @@ import { logger } from './logger';
 /**
  * Shared HTTP client for external APIs (Meta Graph, Shopify, OpenCode).
  *
- * Adds what raw fetch() lacks (per gap analysis C3):
+ * Hardened per gap analysis (C3) + NINA's C1 spec §11:
  *   - Request timeout (AbortController) — a hung upstream call can no longer
  *     stall a BullMQ worker forever.
- *   - Exponential backoff with jitter + retry on 429 / 5xx / network errors.
- *   - Respects Retry-After when the API sends it (Meta/Shopify rate limits).
+ *   - Exponential backoff with jitter on retries.
+ *   - **Bug 1**: retries only apply to idempotent methods (GET/HEAD/PUT/
+ *     DELETE/OPTIONS) unless `retryNonIdempotent` is explicitly true. Retrying
+ *     a POST that already succeeded upstream (e.g. Meta campaign create)
+ *     would create a duplicate — a billing incident.
+ *   - **Bug 2**: Meta Marketing API returns rate-limit errors as HTTP 400
+ *     with error codes 4, 17, 32, 613, 80004 — not 429. These are retried too.
+ *   - **Bug 3**: Shopify Admin GraphQL throttling returns HTTP 200 with a
+ *     THROTTLED error in the body. The body is inspected, not just the status.
+ *   - **Bug 4**: Retry-After may be seconds OR an HTTP-date. It is parsed in
+ *     both forms, capped at MAX_WAIT (60s) so a job slot is never held for an
+ *     hour, and jitter is applied on every wait path (thundering-herd guard).
+ *
+ * Returns on 4xx instead of throwing so callers can read Meta's error object —
+ * every call site MUST check `.ok` before treating the body as data.
  *
  * Usage:
- *   const res = await httpFetch(url, { ... }, { timeoutMs: 15000, retries: 3 });
+ *   const res = await httpFetch(url, { method: 'GET', headers }, { label: 'meta' });
+ *   if (!res.ok) throw new Error(`Meta ${res.status}: ${res.text.slice(0, 200)}`);
+ *   const data = res.json;
  */
 
 export interface HttpOptions {
@@ -22,6 +37,12 @@ export interface HttpOptions {
   backoffMs?: number;
   /** Human label for logs (e.g. 'meta', 'shopify'). */
   label?: string;
+  /**
+   * Allow retries on non-idempotent methods (POST/PATCH). Default false.
+   * Only set true when the operation is safe to repeat or de-duplicated
+   * upstream (never for Meta campaign/ad creation).
+   */
+  retryNonIdempotent?: boolean;
 }
 
 interface HttpResult {
@@ -33,6 +54,41 @@ interface HttpResult {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Methods that are safe to retry. */
+const IDEMPOTENT_METHODS = ['GET', 'HEAD', 'PUT', 'DELETE', 'OPTIONS'];
+
+/** Meta Marketing API rate-limit / throttling error codes (returned as HTTP 400). */
+const META_RATE_LIMIT_CODES = [4, 17, 32, 613, 80004];
+
+/** Hard cap on any single wait (Bug 4): never sleep longer than this. */
+const MAX_WAIT = 60_000;
+
+/**
+ * Parse a Retry-After header. Accepts delta-seconds or an HTTP-date.
+ * Returns milliseconds or NaN when absent/invalid.
+ */
+function parseRetryAfter(value: string | null): number {
+  if (!value) return NaN;
+  const secs = Number(value);
+  if (Number.isFinite(secs)) return Math.max(0, secs * 1000);
+  const date = Date.parse(value); // HTTP-date form
+  return Number.isFinite(date) ? Math.max(0, date - Date.now()) : NaN;
+}
+
+/** True when Meta reports a rate-limit error (Bug 2). */
+function isMetaRateLimited(status: number, json: any): boolean {
+  return status === 400 && META_RATE_LIMIT_CODES.includes(Number(json?.error?.code));
+}
+
+/** True when Shopify GraphQL throttled us inside an HTTP 200 (Bug 3). */
+function isShopifyThrottled(status: number, json: any): boolean {
+  return (
+    status === 200 &&
+    Array.isArray(json?.errors) &&
+    json.errors.some((e: any) => e?.extensions?.code === 'THROTTLED')
+  );
+}
+
 /**
  * Fetch with timeout + exponential backoff. Returns the parsed body even on
  * non-2xx so callers can read API error payloads (e.g. Meta's error object).
@@ -43,11 +99,22 @@ export async function httpFetch(
   init: RequestInit = {},
   options: HttpOptions = {}
 ): Promise<HttpResult> {
-  const { timeoutMs = 30000, retries = 2, backoffMs = 500, label = 'http' } = options;
+  const {
+    timeoutMs = 30000,
+    retries = 2,
+    backoffMs = 500,
+    label = 'http',
+    retryNonIdempotent = false,
+  } = options;
+
+  const method = (init.method ?? 'GET').toUpperCase();
+  const idempotent = IDEMPOTENT_METHODS.includes(method);
+  // Bug 1: never retry a POST/PATCH unless the caller explicitly opts in.
+  const maxAttempts = idempotent || retryNonIdempotent ? retries : 0;
 
   let lastError: any = null;
 
-  for (let attempt = 0; attempt <= retries; attempt++) {
+  for (let attempt = 0; attempt <= maxAttempts; attempt++) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -63,13 +130,22 @@ export async function httpFetch(
         // leave json null; caller can inspect text/status
       }
 
-      // Retry on rate limiting / transient server errors.
-      const retryable = response.status === 429 || response.status >= 500;
-      if (retryable && attempt < retries) {
-        const retryAfter = Number(response.headers.get('retry-after'));
-        const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
-          ? retryAfter * 1000
-          : backoffMs * Math.pow(2, attempt) + Math.floor(Math.random() * 250);
+      // Retry conditions: 429, 5xx, Meta rate-limit codes (Bug 2),
+      // and Shopify GraphQL throttle-in-200 (Bug 3).
+      const retryable =
+        response.status === 429 ||
+        response.status >= 500 ||
+        isMetaRateLimited(response.status, json) ||
+        isShopifyThrottled(response.status, json);
+
+      if (retryable && attempt < maxAttempts) {
+        const retryAfterMs = parseRetryAfter(response.headers.get('retry-after'));
+        const backoff = backoffMs * Math.pow(2, attempt);
+        // Bug 4: honor Retry-After but cap it; always add jitter.
+        const waitMs =
+          Math.min(MAX_WAIT, Number.isFinite(retryAfterMs) ? retryAfterMs : backoff) +
+          Math.floor(Math.random() * 250);
+
         logger.warn(`${label}: transient ${response.status}, retrying`, {
           attempt: attempt + 1,
           waitMs,
@@ -83,7 +159,7 @@ export async function httpFetch(
     } catch (error: any) {
       lastError = error;
       const isTimeout = error?.name === 'AbortError';
-      if (attempt < retries) {
+      if (attempt < maxAttempts) {
         const waitMs = backoffMs * Math.pow(2, attempt) + Math.floor(Math.random() * 250);
         logger.warn(`${label}: ${isTimeout ? 'timeout' : 'network error'}, retrying`, {
           attempt: attempt + 1,
@@ -94,7 +170,7 @@ export async function httpFetch(
         continue;
       }
       throw new Error(
-        `${label}: request failed after ${retries + 1} attempts: ${error?.message || 'unknown error'}`
+        `${label}: request failed after ${maxAttempts + 1} attempts: ${error?.message || 'unknown error'}`
       );
     } finally {
       clearTimeout(timer);

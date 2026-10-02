@@ -116,6 +116,80 @@ model Ad {
   @@map("ads")
 }
 
+// India unit economics (gap C1) — one row per Shopify order with the full cost stack
+enum OrderOutcome {
+  PENDING        // shipped, not yet delivered
+  DELIVERED
+  RTO            // returned to origin (courier)
+  RETURNED       // customer return after delivery
+  CANCELLED
+}
+
+model OrderEconomics {
+  id               String   @id @default(cuid())
+  shopifyOrderId   String   @unique
+  orderNumber      String
+  placedAt         DateTime
+
+  // attribution (reuses the existing UTM attribution output)
+  campaignId       String?
+  adSetId          String?
+  adId             String?
+
+  isCod            Boolean  @default(false)
+  financialStatus  String   // PAID | PENDING | REFUNDED | PARTIALLY_REFUNDED ...
+  fulfillmentStatus String?
+  currency         String   @default("INR")
+
+  // revenue side
+  grossRevenue     Decimal @db.Decimal(12, 2)
+  discountAmount   Decimal @db.Decimal(12, 2) @default(0)
+  taxAmount        Decimal @db.Decimal(12, 2) @default(0)
+  shippingCharged  Decimal @db.Decimal(12, 2) @default(0)
+  netRevenue       Decimal @db.Decimal(12, 2) // computed by economics service
+
+  // cost side
+  cogsAmount        Decimal @db.Decimal(12, 2) @default(0)
+  paymentFeeAmount  Decimal @db.Decimal(12, 2) @default(0)
+  codFeeAmount      Decimal @db.Decimal(12, 2) @default(0)
+  packagingCost     Decimal @db.Decimal(12, 2) @default(0)
+  forwardShipCost   Decimal @db.Decimal(12, 2) @default(0)
+  returnShipCost    Decimal @db.Decimal(12, 2) @default(0)
+  rtoHandlingCost   Decimal @db.Decimal(12, 2) @default(0)
+
+  refundedAmount       Decimal @db.Decimal(12, 2) @default(0)
+  outcome              OrderOutcome @default(PENDING)
+  outcomeConfirmed     Boolean      @default(false) // true = real data, false = assumption
+
+  contributionMargin Decimal @db.Decimal(12, 2)
+
+  // HONESTY FLAG — how complete is this row?
+  // 'complete' = COGS + outcome both known
+  // 'no_cogs'  = product cost missing in Shopify
+  // 'assumed_rto' = outcome is an assumption, not a courier fact
+  dataQuality String @default("complete")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([placedAt])
+  @@index([campaignId, placedAt])
+  @@index([isCod])
+  @@index([outcome])
+  @@map("order_economics")
+}
+
+// Editable cost assumptions — every rupee assumption lives here, nowhere else.
+model CostAssumption {
+  id          String   @id @default(cuid())
+  key         String   @unique // see defaults in seed
+  value       Decimal  @db.Decimal(12, 4)
+  unit        String   // 'percent' | 'inr_per_order' | 'inr_per_kg'
+  note        String?
+  updatedAt   DateTime @updatedAt
+  @@map("cost_assumptions")
+}
+
 // Performance Metrics (time-series data)
 model CampaignMetric {
   id            String   @id @default(cuid())

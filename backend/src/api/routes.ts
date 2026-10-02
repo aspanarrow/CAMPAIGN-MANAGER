@@ -5,6 +5,7 @@ import { authenticate } from '../middleware/auth';
 import campaignsRoutes from './campaigns.routes';
 import approvalsRoutes from './approvals.routes';
 import automationRoutes from './automation.routes';
+import profitRoutes from './profit.routes';
 import { CampaignStatus } from '@prisma/client';
 
 const router = Router();
@@ -23,6 +24,8 @@ router.get('/auth/verify', authenticate, (_req, res) => {
 router.use('/campaigns', authenticate, campaignsRoutes);
 router.use('/approvals', authenticate, approvalsRoutes);
 router.use('/automation', authenticate, automationRoutes);
+router.use('/profit', authenticate, profitRoutes);
+router.use('/costs', authenticate, profitRoutes);
 
 // Analytics endpoint (aggregated overview)
 router.get('/analytics', authenticate, async (_req, res, next) => {

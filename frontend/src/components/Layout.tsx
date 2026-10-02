@@ -8,6 +8,7 @@ import { useAuth } from './AuthProvider';
 const navigation = [
   { name: 'Campaigns', href: '/campaigns', icon: '📊' },
   { name: 'Create Campaign', href: '/campaigns/new', icon: '➕' },
+  { name: 'Profit', href: '/profit', icon: '💰' },
   { name: 'Approvals', href: '/approvals', icon: '✅' },
   { name: 'Automation', href: '/automation', icon: '⚙️' },
   { name: 'Analytics', href: '/analytics', icon: '📈' },

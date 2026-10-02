@@ -68,14 +68,20 @@ class ShopifyService {
   }
 
   /**
-   * Get orders (used for revenue attribution). `since` is an ISO date string.
+   * Get orders (used for revenue attribution AND India unit economics).
+   * `since` is an ISO date string. Includes the full cost-stack fields
+   * required by OrderEconomics (NINA C1 spec §5).
    */
   async getOrders(opts: { since?: string; limit?: number; status?: string } = {}): Promise<any[]> {
     try {
       const query: Record<string, any> = {
         limit: opts.limit ?? 250,
         status: opts.status ?? 'any',
-        fields: 'id,name,created_at,total_price,currency,landing_site,referring_site,source_name,note_attributes,line_items',
+        fields:
+          'id,name,created_at,total_price,current_total_price,total_discounts,total_tax,' +
+          'total_shipping_price,total_refunded,financial_status,fulfillment_status,' +
+          'payment_gateway_names,currency,landing_site,referring_site,source_name,' +
+          'note_attributes,line_items,refunds',
       };
       if (opts.since) query.created_at_min = opts.since;
 
@@ -85,6 +91,41 @@ class ShopifyService {
       logger.error('Error fetching orders from Shopify', { error: error.message });
       throw new Error(`Failed to fetch orders: ${error.message}`);
     }
+  }
+
+  /**
+   * Detect COD from Shopify order signals (NINA C1 spec §5).
+   * Log the distinct gateway names you see for the first 100 orders — that
+   * list is the source of truth, not this guess.
+   */
+  isCodOrder(order: any): boolean {
+    const gw = ((order.payment_gateway_names || order.paymentGatewayNames) as string[])
+      .join(' ')
+      .toLowerCase();
+    return (
+      gw.includes('cod') ||
+      gw.includes('cash on delivery') ||
+      gw.includes('manual') ||
+      (order.financial_status === 'PENDING' && gw.length > 0)
+    );
+  }
+
+  /**
+   * Sum COGS for an order from line-item unit costs.
+   * Returns null when any variant is missing unitCost (spec: dataQuality='no_cogs').
+   */
+  computeCogs(order: any): number | null {
+    const items = order.line_items || order.lineItems?.nodes || [];
+    let total = 0;
+    for (const item of items) {
+      const unitCost =
+        item.variant?.inventoryItem?.unitCost?.amount ??
+        item.variant?.inventory_item?.unit_cost ??
+        item.unitCost;
+      if (unitCost === null || unitCost === undefined) return null; // missing COGS
+      total += parseFloat(unitCost) * (item.quantity || 1);
+    }
+    return Number(total.toFixed(2));
   }
 
   /**

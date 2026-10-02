@@ -112,6 +112,29 @@ export const api = {
   getAuditLog: (limit = 100) =>
     apiClient.get('/api/automation/audit', { params: { limit } }),
 
+  // Profit (India unit economics)
+  profitSummary: (params?: { from?: string; to?: string; campaignId?: string }) =>
+    apiClient.get('/api/profit/summary', { params }),
+
+  profitOrders: (params?: { from?: string; to?: string; filter?: string; page?: number; limit?: number }) =>
+    apiClient.get('/api/profit/orders', { params }),
+
+  profitCampaigns: (params?: { from?: string; to?: string }) =>
+    apiClient.get('/api/profit/campaigns', { params }),
+
+  profitSetOutcome: (id: string, outcome: string, confirmedBy?: string) =>
+    apiClient.patch(`/api/profit/orders/${id}/outcome`, { outcome, confirmedBy }),
+
+  profitSync: () => apiClient.post('/api/profit/sync'),
+
+  profitRecompute: (params?: { from?: string; to?: string }) =>
+    apiClient.post('/api/profit/recompute', params || {}),
+
+  getCosts: () => apiClient.get('/api/profit/costs'),
+
+  updateCost: (key: string, value: number) =>
+    apiClient.put('/api/profit/costs', { key, value }),
+
   // Approvals
   getApprovals: () =>
     apiClient.get('/api/approvals'),
