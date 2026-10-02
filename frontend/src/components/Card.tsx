@@ -1,15 +1,15 @@
 'use client';
 
-import { ReactNode } from 'react';
+import { HTMLAttributes, ReactNode } from 'react';
 
-interface CardProps {
+interface CardProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode;
   className?: string;
   hover?: boolean;
   padding?: 'none' | 'sm' | 'md' | 'lg';
 }
 
-export function Card({ children, className = '', hover = false, padding = 'md' }: CardProps) {
+export function Card({ children, className = '', hover = false, padding = 'md', ...rest }: CardProps) {
   const paddingClasses = {
     none: '',
     sm: 'p-4',
@@ -19,6 +19,7 @@ export function Card({ children, className = '', hover = false, padding = 'md' }
 
   return (
     <div
+      {...rest}
       className={`
         bg-white rounded-xl shadow-soft border border-gray-100
         ${paddingClasses[padding]}

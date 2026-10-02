@@ -1,0 +1,13 @@
+{
+  "name": "meta-oauth-helper",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Standalone Meta (Facebook) OAuth helper. Fetches a long-lived access token + ad account and writes them into backend/.env. Does NOT touch the main app code.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

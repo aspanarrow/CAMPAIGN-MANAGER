@@ -1,24 +1,26 @@
 # Backend Dockerfile for Railway/Production
+# NOTE: build from the repository ROOT so the shared/ folder and the workspace
+# package-lock.json are available, e.g.:
+#   docker build -f backend/Dockerfile -t shopify-marketing-ai-backend .
 FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
-COPY tsconfig.json ./
-COPY prisma ./prisma/
-
-# Install dependencies
+# Install workspace dependencies
+COPY package.json package-lock.json ./
+COPY backend/package.json ./backend/
+COPY frontend/package.json ./frontend/
 RUN npm ci
 
-# Generate Prisma client
-RUN npx prisma generate
+# Copy backend sources, Prisma schema and shared schemas
+COPY backend ./backend
+COPY shared ./shared
 
-# Copy source code
-COPY . .
+WORKDIR /app/backend
 
-# Build TypeScript
-RUN npm run build
+# Generate Prisma client and compile TypeScript
+RUN npx prisma generate \
+  && npm run build
 
 # Expose port
 EXPOSE 5000

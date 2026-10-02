@@ -2,7 +2,6 @@ import cron from 'node-cron';
 import { Queue } from 'bullmq';
 import Redis from 'ioredis';
 import { logger } from '../utils/logger';
-import { prisma } from '../config/database';
 
 // Initialize Redis and Queue
 const connection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
@@ -13,57 +12,35 @@ const queue = new Queue('campaign-jobs', { connection });
 
 /**
  * Scheduled Tasks
- * Runs periodic jobs for campaign management
+ * Runs periodic jobs for campaign management.
+ *
+ * Each job enqueues a single aggregate job; the worker expands it across the
+ * active campaigns. This keeps the scheduler stateless and simple.
  */
 
-// Sync campaign metrics every 30 minutes
+// Sync all active campaign metrics every 30 minutes
 cron.schedule('*/30 * * * *', async () => {
-  logger.info('Running scheduled task: Sync campaign metrics');
-  
+  logger.info('Scheduled: sync campaign metrics');
   try {
-    const activeCampaigns = await prisma.campaign.findMany({
-      where: { status: 'ACTIVE' },
-      select: { id: true },
-    });
-
-    for (const campaign of activeCampaigns) {
-      await queue.add('sync-campaign-metrics', {
-        campaignId: campaign.id,
-      });
-    }
-
-    logger.info(`Scheduled sync completed for ${activeCampaigns.length} campaigns`);
+    await queue.add('sync-all-metrics', {});
   } catch (error: any) {
     logger.error('Error in scheduled sync', { error: error.message });
   }
 });
 
-// Optimize campaigns daily at 2 AM
+// Evaluate automation rules daily at 2 AM (also syncs first)
 cron.schedule('0 2 * * *', async () => {
-  logger.info('Running scheduled task: Optimize campaigns');
-  
+  logger.info('Scheduled: evaluate automation rules');
   try {
-    const activeCampaigns = await prisma.campaign.findMany({
-      where: { status: 'ACTIVE' },
-      select: { id: true },
-    });
-
-    for (const campaign of activeCampaigns) {
-      await queue.add('optimize-campaign', {
-        campaignId: campaign.id,
-      });
-    }
-
-    logger.info(`Scheduled optimization completed for ${activeCampaigns.length} campaigns`);
+    await queue.add('evaluate-all-rules', {});
   } catch (error: any) {
-    logger.error('Error in scheduled optimization', { error: error.message });
+    logger.error('Error in scheduled rule evaluation', { error: error.message });
   }
 });
 
 // Check pending approvals every hour
 cron.schedule('0 * * * *', async () => {
-  logger.info('Running scheduled task: Check pending approvals');
-  
+  logger.info('Scheduled: check pending approvals');
   try {
     await queue.add('check-approvals', {});
   } catch (error: any) {

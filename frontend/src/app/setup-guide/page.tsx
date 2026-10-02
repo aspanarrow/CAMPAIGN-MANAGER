@@ -40,15 +40,18 @@ export default function SetupGuidePage() {
           </p>
           <div className="space-y-3">
             <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-              <h4 className="font-semibold text-gray-900 mb-2">Default Login Credentials</h4>
-              <p className="text-sm text-gray-600 mb-2">For local development, use:</p>
-              <code className="block bg-white px-3 py-2 rounded border border-gray-300 text-sm font-mono">
-                dev-api-key-change-in-production
-              </code>
+              <h4 className="font-semibold text-gray-900 mb-2">Where is my API key?</h4>
+              <p className="text-sm text-gray-600 mb-2">
+                The API key is whatever you have set as <code className="bg-white px-1.5 py-0.5 rounded border border-gray-300 text-xs font-mono">API_KEY</code> in <code className="bg-white px-1.5 py-0.5 rounded border border-gray-300 text-xs font-mono">backend/.env</code>. Read it with:
+              </p>
+              <code className="block bg-white px-3 py-2 rounded border border-gray-300 text-sm font-mono">grep '^API_KEY=' backend/.env</code>
+              <p className="text-sm text-gray-600 mt-2">
+                If you set <code className="bg-white px-1.5 py-0.5 rounded border border-gray-300 text-xs font-mono">NEXT_PUBLIC_API_KEY</code> in <code className="bg-white px-1.5 py-0.5 rounded border border-gray-300 text-xs font-mono">frontend/.env.local</code>, the login form is pre-filled automatically.
+              </p>
             </div>
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
               <p className="text-sm text-yellow-800">
-                <strong>Important:</strong> Change the API_KEY in your backend .env file before deploying to production. Use a strong, randomly generated key.
+                <strong>Important:</strong> Generate a strong random key with <code className="bg-white px-1.5 py-0.5 rounded border border-yellow-300 text-xs font-mono">openssl rand -hex 32</code> and never commit your .env file.
               </p>
             </div>
           </div>
@@ -69,7 +72,7 @@ export default function SetupGuidePage() {
               {
                 name: 'API_KEY',
                 description: 'Authentication key for API access. This is what you enter on the login page.',
-                example: 'dev-api-key-change-in-production',
+                example: '<paste output of: openssl rand -hex 32>',
                 required: true,
               },
               {
@@ -266,7 +269,7 @@ export default function SetupGuidePage() {
               {
                 step: 3,
                 title: 'Start the Application',
-                description: 'Start both backend and frontend servers. They should be running on ports 5000 and 3000 respectively.',
+                description: 'Start both backend and frontend servers (e.g. npm run dev inside backend/ and frontend/).',
               },
               {
                 step: 4,
@@ -317,7 +320,7 @@ export default function SetupGuidePage() {
               },
               {
                 issue: 'Campaigns not loading',
-                solution: 'Check that the backend server is running on port 5000. Verify API authentication is working and database migrations have been run.',
+                solution: 'Check that the backend server is running and that NEXT_PUBLIC_API_URL in frontend/.env.local points to it. Verify API authentication is working and database migrations have been run.',
               },
             ].map((item, idx) => (
               <Card key={idx} className="border-l-4 border-l-yellow-500">

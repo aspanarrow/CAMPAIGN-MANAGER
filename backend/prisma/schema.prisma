@@ -30,7 +30,11 @@ model Campaign {
   spend         Decimal  @default(0) @db.Decimal(10, 2)
   revenue       Decimal  @default(0) @db.Decimal(10, 2)
   roas          Decimal? @db.Decimal(5, 2) // Return on Ad Spend
-  
+
+  // Sync / attribution
+  lastSyncedAt  DateTime? // last time metrics were pulled from the platform
+  utmCampaign   String?   // token used to match Shopify orders for attribution
+
   // Relations
   adSets        AdSet[]
   approvals     Approval[]

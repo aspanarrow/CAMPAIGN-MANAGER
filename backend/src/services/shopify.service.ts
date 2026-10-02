@@ -30,12 +30,10 @@ class ShopifyService {
       isEmbeddedApp: false,
     });
 
-    this.client = shopify.clients.rest({
-      session: {
-        shop: this.storeUrl,
-        accessToken: this.accessToken,
-      },
-    });
+    const session = shopify.session.customAppSession(this.storeUrl);
+    session.accessToken = this.accessToken;
+
+    this.client = new shopify.clients.Rest({ session });
   }
 
   /**
@@ -66,6 +64,26 @@ class ShopifyService {
     } catch (error: any) {
       logger.error('Error fetching product from Shopify', { error: error.message, productId });
       throw new Error(`Failed to fetch product: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get orders (used for revenue attribution). `since` is an ISO date string.
+   */
+  async getOrders(opts: { since?: string; limit?: number; status?: string } = {}): Promise<any[]> {
+    try {
+      const query: Record<string, any> = {
+        limit: opts.limit ?? 250,
+        status: opts.status ?? 'any',
+        fields: 'id,name,created_at,total_price,currency,landing_site,referring_site,source_name,note_attributes,line_items',
+      };
+      if (opts.since) query.created_at_min = opts.since;
+
+      const response = await this.client.get({ path: 'orders', query });
+      return response.body.orders || [];
+    } catch (error: any) {
+      logger.error('Error fetching orders from Shopify', { error: error.message });
+      throw new Error(`Failed to fetch orders: ${error.message}`);
     }
   }
 

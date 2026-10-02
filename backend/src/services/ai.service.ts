@@ -1,23 +1,116 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { logger } from '../utils/logger';
 
+type AIProvider = 'opencode' | 'gemini';
+
 /**
  * AI Content Generation Service
- * Uses Google Gemini to generate marketing content
+ *
+ * Primary provider: OpenCode Go — an OpenAI-compatible chat completions API
+ *   (https://opencode.ai/zen/go/v1/chat/completions).
+ * Fallback provider: Google Gemini (kept for backwards compatibility).
+ *
+ * Select with AI_PROVIDER=opencode|gemini (default: opencode).
  */
 class AIService {
-  private genAI: GoogleGenerativeAI;
-  private model: string = 'gemini-pro';
+  private provider: AIProvider;
+  private genAI?: GoogleGenerativeAI;
+
+  // --- Gemini (fallback) ---
+  private geminiModel: string = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
+
+  // --- OpenCode Go (primary) ---
+  private opencodeBaseUrl: string = (
+    process.env.OPENCODE_BASE_URL || 'https://opencode.ai/zen/go/v1'
+  ).replace(/\/+$/, '');
+  // Cheap, fast open model available on the Go plan.
+  private opencodeModel: string = process.env.OPENCODE_MODEL || 'mimo-v2.6-flash';
+  private opencodeApiKey: string = process.env.OPENCODE_API_KEY || '';
 
   constructor() {
+    const requested = (process.env.AI_PROVIDER || 'opencode').toLowerCase();
+    this.provider = requested === 'gemini' ? 'gemini' : 'opencode';
+
+    if (this.provider === 'opencode') {
+      if (!this.opencodeApiKey) {
+        logger.warn(
+          'OpenCode API key not configured (OPENCODE_API_KEY missing) — AI generation will fail'
+        );
+      } else {
+        logger.info(`AI provider: OpenCode Go (${this.opencodeModel})`);
+      }
+      return;
+    }
+
     const apiKey = process.env.GEMINI_API_KEY;
-    
     if (!apiKey) {
       logger.warn('Gemini API key not configured');
       return;
     }
-
     this.genAI = new GoogleGenerativeAI(apiKey);
+    logger.info(`AI provider: Gemini (${this.geminiModel})`);
+  }
+
+  /**
+   * Send a prompt to the active provider and return the generated text.
+   */
+  private async complete(
+    prompt: string,
+    opts: { temperature?: number; maxOutputTokens?: number } = {}
+  ): Promise<string> {
+    const { temperature = 0.8, maxOutputTokens = 1000 } = opts;
+
+    if (this.provider === 'gemini') {
+      if (!this.genAI) {
+        throw new Error('Gemini is not configured. Set GEMINI_API_KEY or switch AI_PROVIDER.');
+      }
+      const model = this.genAI.getGenerativeModel({
+        model: this.geminiModel,
+        generationConfig: { temperature, maxOutputTokens },
+      });
+      const result = await model.generateContent(prompt);
+      return result.response.text() || '';
+    }
+
+    // OpenCode Go — OpenAI-compatible /chat/completions
+    if (!this.opencodeApiKey) {
+      throw new Error('OpenCode is not configured. Set OPENCODE_API_KEY in the environment.');
+    }
+
+    const res = await fetch(`${this.opencodeBaseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.opencodeApiKey}`,
+        'User-Agent': 'shopify-marketing-ai/1.0',
+        'x-opencode-session': 'shopify-marketing-ai',
+      },
+      body: JSON.stringify({
+        model: this.opencodeModel,
+        messages: [{ role: 'user', content: prompt }],
+        temperature,
+        max_tokens: maxOutputTokens,
+      }),
+    });
+
+    const text = await res.text();
+    if (!res.ok) {
+      throw new Error(`OpenCode request failed (HTTP ${res.status}): ${text.slice(0, 300)}`);
+    }
+
+    let data: any;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(`OpenCode returned invalid JSON: ${text.slice(0, 200)}`);
+    }
+
+    if (data.error) {
+      const msg = data.error.message || JSON.stringify(data.error);
+      throw new Error(`OpenCode error: ${msg}`);
+    }
+
+    return data.choices?.[0]?.message?.content ?? '';
   }
 
   /**
@@ -38,16 +131,12 @@ class AIService {
     try {
       const prompt = this.buildAdCopyPrompt(params);
 
-      const model = this.genAI.getGenerativeModel({ model: this.model });
-      
       const fullPrompt = `You are an expert copywriter specializing in high-converting ad copy for e-commerce. Generate compelling, action-oriented ad copy that drives clicks and conversions.\n\n${prompt}`;
-      
-      const result = await model.generateContent(fullPrompt, {
+
+      const content = await this.complete(fullPrompt, {
         temperature: 0.8,
         maxOutputTokens: 1000,
       });
-
-      const content = result.response.text() || '';
       return this.parseAdCopyResponse(content, params.numberOfVariations || 3);
     } catch (error: any) {
       logger.error('Error generating ad copy', { error: error.message, params });
@@ -82,16 +171,9 @@ Requirements:
 - Make it scannable with short paragraphs
 - Include a clear call-to-action`;
 
-      const model = this.genAI.getGenerativeModel({ model: this.model });
-      
       const fullPrompt = `You are an expert e-commerce copywriter specializing in product descriptions that convert visitors into customers.\n\n${prompt}`;
-      
-      const result = await model.generateContent(fullPrompt, {
-        temperature: 0.7,
-        maxOutputTokens: 500,
-      });
 
-      return result.response.text() || '';
+      return this.complete(fullPrompt, { temperature: 0.7, maxOutputTokens: 500 });
     } catch (error: any) {
       logger.error('Error generating product description', { error: error.message, params });
       throw new Error(`Failed to generate product description: ${error.message}`);
@@ -110,16 +192,12 @@ Requirements:
     try {
       const prompt = this.buildEmailSubjectPrompt(params);
 
-      const model = this.genAI.getGenerativeModel({ model: this.model });
-      
       const fullPrompt = `You are an expert email marketer. Generate compelling subject lines that maximize open rates.\n\n${prompt}`;
-      
-      const result = await model.generateContent(fullPrompt, {
+
+      const content = await this.complete(fullPrompt, {
         temperature: 0.9,
         maxOutputTokens: 300,
       });
-
-      const content = result.response.text() || '';
       return this.parseListResponse(content, params.numberOfVariations || 5);
     } catch (error: any) {
       logger.error('Error generating email subject lines', { error: error.message, params });
@@ -142,16 +220,9 @@ Requirements:
     try {
       const prompt = this.buildEmailBodyPrompt(params);
 
-      const model = this.genAI.getGenerativeModel({ model: this.model });
-      
       const fullPrompt = `You are an expert email copywriter. Write engaging, conversion-focused email content.\n\n${prompt}`;
-      
-      const result = await model.generateContent(fullPrompt, {
-        temperature: 0.8,
-        maxOutputTokens: 800,
-      });
 
-      return result.response.text() || '';
+      return this.complete(fullPrompt, { temperature: 0.8, maxOutputTokens: 800 });
     } catch (error: any) {
       logger.error('Error generating email body', { error: error.message, params });
       throw new Error(`Failed to generate email body: ${error.message}`);
@@ -176,8 +247,8 @@ Requirements:
       const prompt = `Analyze this marketing campaign performance and provide recommendations:
 
 Current Metrics:
-- Spend: $${params.currentSpend}
-- Revenue: $${params.currentRevenue}
+- Spend: ₹${params.currentSpend}
+- Revenue: ₹${params.currentRevenue}
 - ROAS: ${params.roas}x
 - Target ROAS: ${params.targetRoas}x
 
@@ -189,16 +260,12 @@ Provide:
 2. 3-5 specific recommendations
 3. Suggested actions (e.g., "increase budget by 20%", "pause underperforming ads", "test new creative")`;
 
-      const model = this.genAI.getGenerativeModel({ model: this.model });
-      
       const fullPrompt = `You are a marketing analytics expert. Provide data-driven recommendations for campaign optimization.\n\n${prompt}`;
-      
-      const result = await model.generateContent(fullPrompt, {
+
+      const content = await this.complete(fullPrompt, {
         temperature: 0.6,
         maxOutputTokens: 1000,
       });
-
-      const content = result.response.text() || '';
       return this.parseAnalysisResponse(content);
     } catch (error: any) {
       logger.error('Error analyzing performance', { error: error.message, params });
@@ -249,38 +316,59 @@ Format as JSON with arrays: {headlines: [], descriptions: [], callToActions: []}
   }
 
   private parseAdCopyResponse(content: string, count: number): any {
+    // Keys the caller relies on; always guaranteed to be non-empty arrays.
+    const ensureShape = (raw: any): any => {
+      const pick = (...keys: string[]): string[] => {
+        for (const k of keys) {
+          const v = raw && raw[k];
+          if (Array.isArray(v) && v.length) return v.filter(Boolean).map((s) => String(s).trim());
+        }
+        return [];
+      };
+      const headlines = pick('headlines', 'headline', 'titles', 'title').slice(0, count);
+      const descriptions = pick('descriptions', 'description', 'bodies', 'body').slice(0, count);
+      const callToActions = pick('callToActions', 'call_to_actions', 'ctas', 'cta', 'buttons').slice(0, count);
+
+      return {
+        headlines: headlines.length ? headlines : ['Check out our amazing product!'],
+        descriptions: descriptions.length
+          ? descriptions
+          : ['Discover the perfect solution for your needs.'],
+        callToActions: callToActions.length ? callToActions : ['Shop Now'],
+      };
+    };
+
     try {
-      // Try to parse as JSON first
+      // Try to parse as JSON first (models may add prose around the JSON).
       const jsonMatch = content.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
+        try {
+          return ensureShape(JSON.parse(jsonMatch[0]));
+        } catch {
+          // fall through to text parsing
+        }
       }
-      
+
       // Fallback: parse from text format
       const headlines: string[] = [];
       const descriptions: string[] = [];
       const callToActions: string[] = [];
-      
-      // Simple parsing logic (can be improved)
-      const lines = content.split('\n').filter(line => line.trim());
-      lines.forEach(line => {
-        if (line.toLowerCase().includes('headline')) {
+
+      const lines = content.split('\n').filter((line) => line.trim());
+      lines.forEach((line) => {
+        if (/headline/i.test(line)) {
           const match = line.match(/headline[:\-]?\s*(.+)/i);
           if (match) headlines.push(match[1].trim());
-        } else if (line.toLowerCase().includes('description')) {
+        } else if (/description/i.test(line)) {
           const match = line.match(/description[:\-]?\s*(.+)/i);
           if (match) descriptions.push(match[1].trim());
-        } else if (line.toLowerCase().includes('cta') || line.toLowerCase().includes('call')) {
+        } else if (/cta|call[-\s]?to[-\s]?action/i.test(line)) {
           const match = line.match(/(?:cta|call[-\s]to[-\s]action)[:\-]?\s*(.+)/i);
           if (match) callToActions.push(match[1].trim());
         }
       });
-      
-      return {
-        headlines: headlines.slice(0, count),
-        descriptions: descriptions.slice(0, count),
-        callToActions: callToActions.slice(0, count),
-      };
+
+      return ensureShape({ headlines, descriptions, callToActions });
     } catch (error) {
       logger.error('Error parsing ad copy response', { error, content });
       // Return default structure

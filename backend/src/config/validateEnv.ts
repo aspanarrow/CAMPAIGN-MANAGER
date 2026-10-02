@@ -32,6 +32,9 @@ const envSchema = z.object({
   META_ACCESS_TOKEN: z.string().optional(),
   META_AD_ACCOUNT_ID: z.string().optional(),
   META_PAGE_ID: z.string().optional(),
+  META_PIXEL_ID: z.string().optional(),
+  META_CUSTOM_EVENT: z.string().optional(),
+  META_MIN_DAILY_BUDGET: z.coerce.number().positive().optional(),
 
   // Google Ads (Optional)
   GOOGLE_ADS_CLIENT_ID: z.string().optional(),
@@ -44,8 +47,16 @@ const envSchema = z.object({
   KLAVIYO_API_KEY: z.string().optional(),
   KLAVIYO_LIST_ID: z.string().optional(),
 
-  // Google Gemini
-  GEMINI_API_KEY: z.string().min(1, 'GEMINI_API_KEY is required for AI features'),
+  // AI Providers
+  // Provider: 'opencode' (default) or 'gemini'
+  AI_PROVIDER: z.enum(['opencode', 'gemini']).optional(),
+  // OpenCode Go — OpenAI-compatible gateway
+  OPENCODE_API_KEY: z.string().optional(),
+  OPENCODE_BASE_URL: z.string().url().optional(),
+  OPENCODE_MODEL: z.string().optional(),
+  // Google Gemini (fallback)
+  GEMINI_API_KEY: z.string().optional(),
+  GEMINI_MODEL: z.string().optional(),
 
   // Feature Flags
   ENABLE_AI_CONTENT_GENERATION: z.string().transform((val) => val === 'true').default('true'),
@@ -63,6 +74,18 @@ export function validateEnv(): void {
   try {
     envSchema.parse(process.env);
     logger.info('✅ Environment variables validated successfully');
+
+    // Non-fatal AI provider check
+    const provider = (process.env.AI_PROVIDER || 'opencode').toLowerCase();
+    if (provider === 'gemini') {
+      if (!process.env.GEMINI_API_KEY) {
+        logger.warn('⚠️  AI_PROVIDER=gemini but GEMINI_API_KEY is not set — AI features will fail');
+      }
+    } else if (!process.env.OPENCODE_API_KEY) {
+      logger.warn(
+        '⚠️  AI provider is OpenCode but OPENCODE_API_KEY is not set — AI features will fail'
+      );
+    }
   } catch (error) {
     if (error instanceof z.ZodError) {
       const missingVars = error.errors.map((err) => ({

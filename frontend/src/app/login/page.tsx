@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/components/AuthProvider';
@@ -9,12 +9,19 @@ import { Button } from '@/components/Button';
 import { HelpTooltip } from '@/components/HelpTooltip';
 
 export default function LoginPage() {
-  const [apiKey, setApiKey] = useState('');
+  const [apiKey, setApiKey] = useState(process.env.NEXT_PUBLIC_API_KEY || '');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const { setApiKey: setAuthApiKey } = useAuth();
+  const { setApiKey: setAuthApiKey, isAuthenticated, isLoading: authLoading } = useAuth();
   const router = useRouter();
+
+  // If the user is already signed in, skip the login screen
+  useEffect(() => {
+    if (!authLoading && isAuthenticated) {
+      router.replace('/campaigns');
+    }
+  }, [authLoading, isAuthenticated, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,13 +29,10 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      // Test the API key by calling health endpoint
-      const response = await api.health();
-      
-      if (response.status === 200) {
-        setAuthApiKey(apiKey);
-        router.push('/campaigns');
-      }
+      // Verify the API key against an authenticated backend endpoint
+      await api.verifyAuth(apiKey.trim());
+      setAuthApiKey(apiKey.trim());
+      router.push('/campaigns');
     } catch (err: any) {
       setError('Invalid API key. Please check your credentials and try again.');
       console.error('Login error:', err);
@@ -62,7 +66,7 @@ export default function LoginPage() {
                   API Key
                 </label>
                 <HelpTooltip
-                  content="Your API key is configured in the backend .env file. For local development, use: dev-api-key-change-in-production"
+                  content="Your API key is set as API_KEY in the backend .env file. For local development it is pre-filled from NEXT_PUBLIC_API_KEY in frontend/.env.local."
                   title="API Key Help"
                   position="top"
                 />

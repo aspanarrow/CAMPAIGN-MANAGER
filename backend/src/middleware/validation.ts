@@ -45,7 +45,7 @@ export const validate = (schema: ZodSchema) => {
           message: err.message,
         }));
 
-        throw new AppError('Validation error', 400, 'VALIDATION_ERROR');
+        return next(new AppError('Validation error', 400, 'VALIDATION_ERROR', errorMessages));
       }
       next(error);
     }
@@ -67,7 +67,7 @@ export const validateBody = (schema: ZodSchema) => {
           message: err.message,
         }));
 
-        throw new AppError('Validation error', 400, 'VALIDATION_ERROR');
+        return next(new AppError('Validation error', 400, 'VALIDATION_ERROR', errorMessages));
       }
       next(error);
     }
@@ -89,7 +89,7 @@ export const validateQuery = (schema: ZodSchema) => {
           message: err.message,
         }));
 
-        throw new AppError('Validation error', 400, 'VALIDATION_ERROR');
+        return next(new AppError('Validation error', 400, 'VALIDATION_ERROR', errorMessages));
       }
       next(error);
     }
@@ -111,7 +111,7 @@ export const validateParams = (schema: ZodSchema) => {
           message: err.message,
         }));
 
-        throw new AppError('Validation error', 400, 'VALIDATION_ERROR');
+        return next(new AppError('Validation error', 400, 'VALIDATION_ERROR', errorMessages));
       }
       next(error);
     }

@@ -5,6 +5,7 @@ import { ZodError } from 'zod';
 export interface IAppError extends Error {
   statusCode?: number;
   code?: string;
+  details?: any;
 }
 
 export const errorHandler = (
@@ -55,11 +56,13 @@ export const errorHandler = (
 export class AppError extends Error implements IAppError {
   statusCode: number;
   code?: string;
+  details?: any;
 
-  constructor(message: string, statusCode: number = 500, code?: string) {
+  constructor(message: string, statusCode: number = 500, code?: string, details?: any) {
     super(message);
     this.statusCode = statusCode;
     this.code = code;
+    this.details = details;
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, this.constructor);
     }

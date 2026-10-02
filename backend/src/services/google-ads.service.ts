@@ -44,13 +44,13 @@ class GoogleAdsService {
         }),
       });
 
-      const data = await response.json();
+      const data: any = await response.json();
       
       if (data.error) {
         throw new Error(data.error);
       }
 
-      this.accessToken = data.access_token;
+      this.accessToken = data.access_token as string;
       return this.accessToken;
     } catch (error: any) {
       logger.error('Error refreshing Google Ads token', { error: error.message });

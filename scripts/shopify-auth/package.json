@@ -1,0 +1,14 @@
+{
+  "name": "shopify-auth-helper",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Standalone Shopify token helper. Fetches a fresh Admin API access token via the client credentials grant and writes it into backend/.env. Does NOT touch the main app code.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "watch": "node index.js --watch"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

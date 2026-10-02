@@ -6,6 +6,7 @@ interface AuthContextType {
   apiKey: string | null;
   setApiKey: (key: string) => void;
   isAuthenticated: boolean;
+  isLoading: boolean;
   logout: () => void;
 }
 
@@ -13,6 +14,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [apiKey, setApiKeyState] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     // Load API key from localStorage on mount
@@ -20,6 +22,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (storedKey) {
       setApiKeyState(storedKey);
     }
+    setIsLoading(false);
   }, []);
 
   const setApiKey = (key: string) => {
@@ -38,6 +41,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         apiKey,
         setApiKey,
         isAuthenticated: !!apiKey,
+        isLoading,
         logout,
       }}
     >

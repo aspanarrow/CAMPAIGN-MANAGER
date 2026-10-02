@@ -90,7 +90,7 @@ export default function NewCampaignPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Total Budget ($) *
+                Total Budget (₹) *
               </label>
               <input
                 type="number"
@@ -105,7 +105,7 @@ export default function NewCampaignPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Daily Budget ($)
+                Daily Budget (₹)
               </label>
               <input
                 type="number"

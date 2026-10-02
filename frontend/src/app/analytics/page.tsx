@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { api } from '@/lib/api';
+import { formatCurrency as formatINR } from '@/lib/currency';
 import {
   LineChart,
   Line,
@@ -43,10 +44,7 @@ export default function AnalyticsPage() {
   };
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(amount);
+    return formatINR(amount);
   };
 
   // Calculate totals

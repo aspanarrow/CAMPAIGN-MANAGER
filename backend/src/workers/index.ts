@@ -1,31 +1,45 @@
-import { Worker } from 'bullmq';
+import { Worker, Queue } from 'bullmq';
 import Redis from 'ioredis';
 import { logger } from '../utils/logger';
-import { campaignService } from '../services/campaign.service';
 import { prisma } from '../config/database';
-import { CampaignStatus } from '@prisma/client';
+import { metricsSyncService } from '../services/metrics-sync.service';
+import { rulesEngine } from '../services/rules.service';
+import { notificationService } from '../services/notification.service';
 
 // Initialize Redis connection
 const connection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
   maxRetriesPerRequest: null,
 });
 
+const QUEUE_NAME = 'campaign-jobs';
+
+/** Queue shared with the scheduler. */
+export const campaignQueue = new Queue(QUEUE_NAME, { connection });
+
 /**
  * Worker for processing background jobs
  */
 const worker = new Worker(
-  'campaign-jobs',
+  QUEUE_NAME,
   async (job) => {
     logger.info(`Processing job: ${job.name}`, { jobId: job.id, data: job.data });
 
     try {
       switch (job.name) {
         case 'sync-campaign-metrics':
-          await syncCampaignMetrics(job.data.campaignId);
+          await metricsSyncService.syncCampaign(job.data.campaignId);
           break;
 
-        case 'optimize-campaign':
-          await optimizeCampaign(job.data.campaignId);
+        case 'sync-all-metrics':
+          await metricsSyncService.syncAllActive();
+          break;
+
+        case 'evaluate-rules':
+          await evaluateRules(job.data.campaignId);
+          break;
+
+        case 'evaluate-all-rules':
+          await evaluateAllRules();
           break;
 
         case 'check-approvals':
@@ -56,42 +70,28 @@ const worker = new Worker(
 );
 
 /**
- * Sync campaign metrics from platform
+ * Sync metrics then evaluate automation rules for a single campaign.
  */
-async function syncCampaignMetrics(campaignId: string): Promise<void> {
-  try {
-    await campaignService.getCampaignMetrics(campaignId);
-    logger.info('Campaign metrics synced', { campaignId });
-  } catch (error: any) {
-    logger.error('Error syncing campaign metrics', { campaignId, error: error.message });
-    throw error;
-  }
+async function evaluateRules(campaignId: string): Promise<void> {
+  await metricsSyncService.syncCampaign(campaignId);
+  const actions = await rulesEngine.evaluateCampaign(campaignId);
+  logger.info('Rules evaluated', { campaignId, actions: actions.length });
 }
 
 /**
- * Optimize campaign based on performance
+ * Evaluate rules for every active campaign.
  */
-async function optimizeCampaign(campaignId: string): Promise<void> {
-  try {
-    const optimization = await campaignService.optimizeCampaign(campaignId);
-    
-    // Execute recommended actions if auto-approval is enabled
-    if (process.env.ENABLE_AUTO_APPROVAL === 'true') {
-      for (const action of optimization.actions) {
-        if (action.type === 'PAUSE_CAMPAIGN') {
-          await prisma.campaign.update({
-            where: { id: campaignId },
-            data: { status: CampaignStatus.PAUSED },
-          });
-          logger.info('Campaign auto-paused due to poor performance', { campaignId });
-        }
-      }
+async function evaluateAllRules(): Promise<void> {
+  const campaigns = await prisma.campaign.findMany({
+    where: { status: 'ACTIVE', externalId: { not: null } },
+    select: { id: true },
+  });
+  for (const c of campaigns) {
+    try {
+      await evaluateRules(c.id);
+    } catch (error: any) {
+      logger.error('Rule evaluation failed', { campaignId: c.id, error: error.message });
     }
-
-    logger.info('Campaign optimized', { campaignId, recommendations: optimization.recommendations.length });
-  } catch (error: any) {
-    logger.error('Error optimizing campaign', { campaignId, error: error.message });
-    throw error;
   }
 }
 
@@ -106,8 +106,16 @@ async function checkPendingApprovals(): Promise<void> {
     });
 
     if (approvals.length > 0) {
-      logger.info('Pending approvals found', { count: approvals.length });
-      // TODO: Send notification (email/Slack)
+      const summary = approvals
+        .slice(0, 5)
+        .map((a) => `• ${a.type} — ${a.campaign?.name || a.entityId}`)
+        .join('\n');
+      await notificationService.send({
+        title: `${approvals.length} approval(s) pending`,
+        message: summary,
+        level: 'info',
+        data: { count: approvals.length },
+      });
     }
   } catch (error: any) {
     logger.error('Error checking approvals', { error: error.message });

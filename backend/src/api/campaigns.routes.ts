@@ -39,8 +39,8 @@ router.get('/', validateQuery(campaignQuerySchema), async (req, res, next) => {
         },
       },
       orderBy: { createdAt: 'desc' },
-      take: limit as number,
-      skip: offset as number,
+      take: Number(limit ?? 50),
+      skip: Number(offset ?? 0),
     });
 
     res.json({ campaigns, pagination: { limit, offset, total: campaigns.length } });
@@ -82,6 +82,67 @@ router.get('/:id', validateParams(campaignIdSchema), async (req, res, next) => {
       throw new AppError('Campaign not found', 404);
     }
 
+    res.json({ campaign });
+  } catch (error: any) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/campaigns/:id/timeseries
+ * Get day-by-day metrics for charts (default last 30 days).
+ */
+router.get('/:id/timeseries', validateParams(campaignIdSchema), async (req, res, next) => {
+  try {
+    const days = Number(req.query.days ?? 30);
+    const series = await campaignService.getTimeseries(req.params.id, days);
+    res.json({ timeseries: series });
+  } catch (error: any) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/campaigns/:id/sync
+ * Force a fresh metric + status + attribution sync.
+ */
+router.post('/:id/sync', validateParams(campaignIdSchema), async (req, res, next) => {
+  try {
+    await campaignService.syncCampaign(req.params.id);
+    const campaign = await prisma.campaign.findUnique({ where: { id: req.params.id } });
+    res.json({ synced: true, campaign });
+  } catch (error: any) {
+    next(error);
+  }
+});
+
+/**
+ * PATCH /api/campaigns/:id
+ * Update campaign (name / dailyBudget / status). Syncs to the platform.
+ */
+router.patch('/:id', validateParams(campaignIdSchema), async (req, res, next) => {
+  try {
+    const { name, dailyBudget, status } = req.body || {};
+    const campaign = await campaignService.updateCampaign(req.params.id, {
+      name,
+      dailyBudget: typeof dailyBudget === 'number' ? dailyBudget : undefined,
+      status,
+    });
+    res.json({ campaign });
+  } catch (error: any) {
+    next(error);
+  }
+});
+
+/**
+ * PUT /api/campaigns/:id/utm
+ * Set the UTM token used for revenue attribution.
+ */
+router.put('/:id/utm', validateParams(campaignIdSchema), async (req, res, next) => {
+  try {
+    const { utmCampaign } = req.body || {};
+    if (!utmCampaign) throw new AppError('utmCampaign is required', 400);
+    const campaign = await campaignService.setUtmCampaign(req.params.id, utmCampaign);
     res.json({ campaign });
   } catch (error: any) {
     next(error);

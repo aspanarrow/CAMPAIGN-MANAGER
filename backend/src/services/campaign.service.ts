@@ -52,6 +52,7 @@ class CampaignService {
       });
 
       // 3. Create campaign in database
+      const utmCampaign = `glowify_${Date.now().toString(36)}`;
       const campaign = await prisma.campaign.create({
         data: {
           platform: params.platform,
@@ -61,6 +62,7 @@ class CampaignService {
           dailyBudget: params.dailyBudget,
           objective: params.objective,
           targetAudience: params.targetAudience || {},
+          utmCampaign,
         },
       });
 
@@ -88,6 +90,7 @@ class CampaignService {
               adCopy: {
                 headlines: adCopy.headlines,
                 descriptions: adCopy.descriptions,
+                callToActions: adCopy.callToActions,
               },
             },
           },
@@ -167,17 +170,38 @@ class CampaignService {
       });
 
       // Create ad set
+      // Meta requires a daily budget above ~₹96 (INR accounts) or delivery is rejected.
+      const rawDaily = Number(campaign.dailyBudget || campaign.budget / 30) || 0;
+      const minDaily = Number(process.env.META_MIN_DAILY_BUDGET || 100);
+      const dailyBudget = Math.max(rawDaily, minDaily);
+
+      // Conversion objectives need a promoted object (pixel + event).
+      const pixelId = process.env.META_PIXEL_ID;
+      const promotedObject = pixelId
+        ? { pixel_id: pixelId, custom_event_type: process.env.META_CUSTOM_EVENT || 'PURCHASE' }
+        : undefined;
+
+      const defaultTargeting = {
+        geo_locations: { countries: ['IN'] },
+        age_min: 18,
+        age_max: 65,
+        genders: [1, 2], // All genders
+      };
+      const hasTargeting =
+        campaign.targetAudience &&
+        typeof campaign.targetAudience === 'object' &&
+        Object.keys(campaign.targetAudience).length > 0;
+
+      const adSetName = `${campaign.name} - Ad Set 1`;
       const adSet = await metaService.createAdSet({
         campaignId: metaCampaign.id,
-        name: `${campaign.name} - Ad Set 1`,
-        dailyBudget: Number(campaign.dailyBudget || campaign.budget / 30),
+        name: adSetName,
+        dailyBudget,
         billingEvent: 'IMPRESSIONS',
         optimizationGoal: 'OFFSITE_CONVERSIONS',
-        targeting: campaign.targetAudience || {
-          age_min: 18,
-          age_max: 65,
-          genders: [1, 2], // All genders
-        },
+        bidStrategy: 'LOWEST_COST_WITHOUT_CAP',
+        promotedObject,
+        targeting: hasTargeting ? campaign.targetAudience : defaultTargeting,
         status: 'PAUSED',
       });
 
@@ -185,11 +209,11 @@ class CampaignService {
       const dbAdSet = await prisma.adSet.create({
         data: {
           campaignId: campaign.id,
-          name: adSet.name,
+          name: adSetName,
           status: CampaignStatus.DRAFT,
-          budget: campaign.dailyBudget || campaign.budget / 30,
+          budget: dailyBudget,
           externalId: adSet.id,
-          targeting: campaign.targetAudience,
+          targeting: hasTargeting ? campaign.targetAudience : defaultTargeting,
         },
       });
 
@@ -198,47 +222,61 @@ class CampaignService {
         const headlines = options.adCopy.headlines || [];
         const descriptions = options.adCopy.descriptions || [];
         const ctas = options.adCopy.callToActions || ['Shop Now'];
+        const fallbackLink =
+          process.env.META_DEFAULT_LINK ||
+          `https://${(process.env.SHOPIFY_STORE_URL || 'example.com').replace(/^https?:\/\//, '')}`;
+        const pageId = process.env.META_PAGE_ID || '';
 
         for (let i = 0; i < Math.min(headlines.length, 3); i++) {
-          // Create ad creative
-          const creative = await metaService.createAdCreative({
-            name: `${campaign.name} - Creative ${i + 1}`,
-            objectStorySpec: {
-              page_id: process.env.META_PAGE_ID || '', // Need to set this
-              link_data: {
-                message: descriptions[i] || '',
-                link: options.products?.[0]?.url || '',
-                name: headlines[i] || '',
-                call_to_action: {
-                  type: ctas[i] || 'LEARN_MORE',
+          try {
+            // Create ad creative
+            const creative = await metaService.createAdCreative({
+              name: `${campaign.name} - Creative ${i + 1}`,
+              objectStorySpec: {
+                page_id: pageId,
+                link_data: {
+                  message: descriptions[i] || '',
+                  link: options.products?.[0]?.url || fallbackLink,
+                  name: headlines[i] || '',
+                  call_to_action: {
+                    type: ctas[i] || 'LEARN_MORE',
+                  },
                 },
               },
-            },
-          });
+            });
 
-          // Create ad
-          const ad = await metaService.createAd({
-            adSetId: adSet.id,
-            creativeId: creative.id,
-            name: `${campaign.name} - Ad ${i + 1}`,
-            status: 'PAUSED',
-          });
+            // Create ad
+            const adName = `${campaign.name} - Ad ${i + 1}`;
+            const ad = await metaService.createAd({
+              adSetId: adSet.id,
+              creativeId: creative.id,
+              name: adName,
+              status: 'PAUSED',
+            });
 
-          // Save to database
-          await prisma.ad.create({
-            data: {
-              adSetId: dbAdSet.id,
-              name: ad.name,
-              status: CampaignStatus.DRAFT,
-              creativeType: 'IMAGE',
-              headline: headlines[i],
-              description: descriptions[i],
-              callToAction: ctas[i],
-              externalId: ad.id,
-              aiGenerated: true,
-              aiModel: 'gpt-4',
-            },
-          });
+            // Save to database
+            await prisma.ad.create({
+              data: {
+                adSetId: dbAdSet.id,
+                name: adName,
+                status: CampaignStatus.DRAFT,
+                creativeType: 'IMAGE',
+                headline: headlines[i],
+                description: descriptions[i],
+                callToAction: ctas[i],
+                externalId: ad.id,
+                aiGenerated: true,
+                aiModel: process.env.OPENCODE_MODEL || process.env.GEMINI_MODEL || 'ai',
+              },
+            });
+          } catch (adErr: any) {
+            // Ads are best-effort: a missing creative/link shouldn't fail the
+            // campaign + ad set that were already created successfully.
+            logger.warn('Skipping ad creation (non-fatal)', {
+              index: i,
+              error: adErr.message,
+            });
+          }
         }
       }
     } catch (error: any) {
@@ -423,6 +461,72 @@ class CampaignService {
       logger.error('Error optimizing campaign', { error: error.message, campaignId });
       throw error;
     }
+  }
+
+  /**
+   * Force a metric sync (metrics + status + attribution) for one campaign.
+   */
+  async syncCampaign(campaignId: string): Promise<void> {
+    const { metricsSyncService } = await import('./metrics-sync.service');
+    await metricsSyncService.syncCampaign(campaignId);
+  }
+
+  /**
+   * Get day-by-day time-series for a campaign (for charts).
+   */
+  async getTimeseries(campaignId: string, days: number = 30): Promise<any[]> {
+    return prisma.campaignMetric.findMany({
+      where: { campaignId },
+      orderBy: { date: 'asc' },
+      take: days,
+    });
+  }
+
+  /**
+   * Update a campaign (name, budget, status). Syncs budget/status to Meta.
+   */
+  async updateCampaign(
+    campaignId: string,
+    updates: { name?: string; dailyBudget?: number; status?: CampaignStatus }
+  ): Promise<any> {
+    const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
+    if (!campaign) throw new Error('Campaign not found');
+
+    const data: any = {};
+    if (updates.name) data.name = updates.name;
+    if (typeof updates.dailyBudget === 'number') data.dailyBudget = updates.dailyBudget;
+    if (updates.status) data.status = updates.status;
+
+    if (campaign.externalId && campaign.platform === Platform.META) {
+      if (updates.status && updates.status !== campaign.status) {
+        await metaService.updateCampaignStatus(
+          campaign.externalId,
+          updates.status === CampaignStatus.ACTIVE ? 'ACTIVE' : 'PAUSED'
+        );
+      }
+      if (typeof updates.dailyBudget === 'number') {
+        await metaService.updateCampaignBudget(campaign.externalId, updates.dailyBudget);
+      }
+    }
+
+    const updated = await prisma.campaign.update({ where: { id: campaignId }, data });
+
+    const { auditService } = await import('./audit.service');
+    await auditService.log({
+      action: 'CAMPAIGN_UPDATED',
+      entityType: 'campaign',
+      entityId: campaignId,
+      changes: { from: campaign, to: updated },
+    });
+
+    return updated;
+  }
+
+  /**
+   * Add / update a campaign's UTM token (used for revenue attribution).
+   */
+  async setUtmCampaign(campaignId: string, utmCampaign: string): Promise<any> {
+    return prisma.campaign.update({ where: { id: campaignId }, data: { utmCampaign } });
   }
 }
 

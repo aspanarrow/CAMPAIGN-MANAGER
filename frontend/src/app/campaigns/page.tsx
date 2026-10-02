@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { api } from '@/lib/api';
+import { formatCurrency as formatINR } from '@/lib/currency';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
 import { HelpTooltip } from '@/components/HelpTooltip';
@@ -46,10 +47,7 @@ export default function CampaignsPage() {
   };
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(amount);
+    return formatINR(amount);
   };
 
   const getStatusColor = (status: string) => {

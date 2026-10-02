@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { api } from '@/lib/api';
+import { formatCurrency as formatINR } from '@/lib/currency';
 import {
   LineChart,
   Line,
@@ -48,10 +49,7 @@ export default function CampaignDetailPage() {
   };
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(amount);
+    return formatINR(amount);
   };
 
   const getStatusColor = (status: string) => {
@@ -103,6 +101,20 @@ export default function CampaignDetailPage() {
             <h1 className="text-3xl font-bold text-gray-900">{campaign.name}</h1>
           </div>
           <div className="flex space-x-4">
+            <button
+              onClick={async () => {
+                try {
+                  await api.syncCampaign(campaignId);
+                  loadCampaignData();
+                  alert('Synced metrics from platform');
+                } catch (err) {
+                  alert('Failed to sync campaign');
+                }
+              }}
+              className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800"
+            >
+              Sync Metrics
+            </button>
             <button
               onClick={async () => {
                 try {

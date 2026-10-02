@@ -56,12 +56,30 @@ export const rejectRequestSchema = z.object({
 });
 
 /**
+ * Treat empty query-string values (e.g. `?platform=`) as "not provided".
+ */
+const emptyToUndefined = (val: unknown) =>
+  val === '' || val === undefined || val === null ? undefined : val;
+
+/**
  * Campaign query parameters schema
  */
 export const campaignQuerySchema = z.object({
-  platform: z.enum(['META', 'GOOGLE_ADS', 'EMAIL']).optional(),
-  status: z.enum(['DRAFT', 'PENDING', 'ACTIVE', 'PAUSED', 'ARCHIVED']).optional(),
-  limit: z.coerce.number().int().positive().max(100).optional().default(50),
-  offset: z.coerce.number().int().nonnegative().optional().default(0),
+  platform: z.preprocess(
+    emptyToUndefined,
+    z.enum(['META', 'GOOGLE_ADS', 'EMAIL']).optional()
+  ),
+  status: z.preprocess(
+    emptyToUndefined,
+    z.enum(['DRAFT', 'PENDING', 'ACTIVE', 'PAUSED', 'ARCHIVED']).optional()
+  ),
+  limit: z.preprocess(
+    emptyToUndefined,
+    z.coerce.number().int().positive().max(100).optional().default(50)
+  ),
+  offset: z.preprocess(
+    emptyToUndefined,
+    z.coerce.number().int().nonnegative().optional().default(0)
+  ),
 });
 
