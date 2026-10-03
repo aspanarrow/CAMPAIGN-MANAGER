@@ -252,17 +252,77 @@ class CampaignService {
           process.env.META_DEFAULT_LINK ||
           `https://${(process.env.SHOPIFY_STORE_URL || 'example.com').replace(/^https?:\/\//, '')}`;
         const pageId = process.env.META_PAGE_ID || '';
+        const makeWebhookUrl = process.env.MAKE_WEBHOOK_URL || '';
+        const productUrl = options.products?.[0]?.url || fallbackLink;
+        const productImage = options.products?.[0]?.image || options.products?.[0]?.images?.[0] || null;
 
         for (let i = 0; i < Math.min(headlines.length, 3); i++) {
+          const adName = `${campaign.name} - Ad ${i + 1}`;
+          const creativeName = `${campaign.name} - Creative ${i + 1}`;
+
+          // ---- Path A: Make.com webhook bridge (works in dev mode) ----
+          // Make's own Meta app is already approved, so ad creatives can be
+          // created even while OUR app is in development mode (C5 blocker).
+          if (makeWebhookUrl) {
+            try {
+              const { httpFetch } = await import('../utils/http');
+              const res = await httpFetch(makeWebhookUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  adSetId: adSet.id,
+                  campaignName: campaign.name,
+                  adName,
+                  creativeName,
+                  headline: headlines[i] || '',
+                  message: descriptions[i] || '',
+                  link: productUrl,
+                  image: productImage,
+                  cta: ctas[i] || 'SHOP_NOW',
+                  pageId,
+                }),
+              }, { label: 'make:bridge', timeoutMs: 30000, retries: 1 });
+
+              if (!res.ok) {
+                throw new Error(`Make webhook ${res.status}: ${res.text.slice(0, 200)}`);
+              }
+
+              const adId = res.json?.adId || res.json?.ad_id || null;
+              await prisma.ad.create({
+                data: {
+                  adSetId: dbAdSet.id,
+                  name: adName,
+                  status: CampaignStatus.DRAFT,
+                  creativeType: 'IMAGE',
+                  headline: headlines[i],
+                  description: descriptions[i],
+                  callToAction: ctas[i],
+                  externalId: adId ? String(adId) : `make_${Date.now()}`,
+                  aiGenerated: true,
+                  aiModel: process.env.OPENCODE_MODEL || process.env.GEMINI_MODEL || 'ai',
+                  humanReviewed: false,
+                },
+              });
+              logger.info('Ad created via Make bridge', { adName, adId });
+              continue; // skip direct Meta path for this ad
+            } catch (makeErr: any) {
+              logger.warn('Make bridge failed, falling back to direct Meta', {
+                error: makeErr.message,
+              });
+              // fall through to direct Meta path
+            }
+          }
+
+          // ---- Path B: Direct Meta (works only when app is Live) ----
           try {
             // Create ad creative
             const creative = await metaService.createAdCreative({
-              name: `${campaign.name} - Creative ${i + 1}`,
+              name: creativeName,
               objectStorySpec: {
                 page_id: pageId,
                 link_data: {
                   message: descriptions[i] || '',
-                  link: options.products?.[0]?.url || fallbackLink,
+                  link: productUrl,
                   name: headlines[i] || '',
                   call_to_action: {
                     type: ctas[i] || 'LEARN_MORE',
@@ -272,7 +332,6 @@ class CampaignService {
             });
 
             // Create ad
-            const adName = `${campaign.name} - Ad ${i + 1}`;
             const ad = await metaService.createAd({
               adSetId: adSet.id,
               creativeId: creative.id,

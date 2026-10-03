@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { logger } from '../utils/logger';
 import { prisma } from '../config/database';
 import { authenticate } from '../middleware/auth';
+import { shopifyService } from '../services/shopify.service';
 import campaignsRoutes from './campaigns.routes';
 import approvalsRoutes from './approvals.routes';
 import automationRoutes from './automation.routes';
@@ -25,6 +26,27 @@ router.use('/campaigns', authenticate, campaignsRoutes);
 router.use('/approvals', authenticate, approvalsRoutes);
 router.use('/automation', authenticate, automationRoutes);
 router.use('/profit', authenticate, profitRoutes);
+
+/**
+ * GET /api/products
+ * List products from Shopify for the campaign form picker.
+ */
+router.get('/products', authenticate, async (req, res, next) => {
+  try {
+    const limit = Math.min(Number(req.query.limit ?? 50), 100);
+    const products = await shopifyService.getProducts(limit);
+    const slim = products.map((p: any) => ({
+      id: String(p.id),
+      title: p.title || p.name || 'Product',
+      price: p.variants?.[0]?.price ?? null,
+      image: p.image?.src ?? p.images?.[0]?.src ?? null,
+      handle: p.handle ?? null,
+    }));
+    res.json({ products: slim });
+  } catch (error: any) {
+    next(error);
+  }
+});
 
 // Analytics endpoint (aggregated overview)
 router.get('/analytics', authenticate, async (_req, res, next) => {

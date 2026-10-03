@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { api } from '@/lib/api';
@@ -10,6 +10,7 @@ import { z } from 'zod';
 
 const campaignSchema = z.object({
   name: z.string().optional(),
+  productId: z.string().optional(),
   platform: z.enum(['META', 'GOOGLE_ADS', 'EMAIL']),
   budget: z.number().positive(),
   dailyBudget: z.number().positive().optional(),
@@ -24,6 +25,8 @@ export default function NewCampaignPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [aiPreview, setAiPreview] = useState<any>(null);
+  const [products, setProducts] = useState<any[]>([]);
+  const [productsError, setProductsError] = useState('');
 
   const {
     register,
@@ -39,6 +42,19 @@ export default function NewCampaignPage() {
   });
 
   const platform = watch('platform');
+  const selectedProductId = watch('productId');
+
+  // Load products from Shopify for the picker (once, on mount).
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await api.getProducts(50);
+        setProducts(res.data.products || []);
+      } catch (err: any) {
+        setProductsError('Could not load Shopify products — check backend / Shopify token.');
+      }
+    })();
+  }, []);
 
   const onSubmit = async (data: CampaignFormData) => {
     try {
@@ -47,6 +63,7 @@ export default function NewCampaignPage() {
 
       const response = await api.createCampaign({
         ...data,
+        productIds: data.productId ? [data.productId] : undefined,
         budget: Number(data.budget),
         dailyBudget: data.dailyBudget ? Number(data.dailyBudget) : undefined,
       });
@@ -82,6 +99,33 @@ export default function NewCampaignPage() {
             />
             <p className="mt-1 text-xs text-gray-400">
               Optional — leave blank to auto-generate from the product name.
+            </p>
+          </div>
+
+          {/* Product Picker (from Shopify) */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Product
+            </label>
+            {productsError ? (
+              <p className="text-sm text-amber-600">{productsError}</p>
+            ) : products.length === 0 ? (
+              <p className="text-sm text-gray-400">Loading products from Shopify…</p>
+            ) : (
+              <select
+                {...register('productId')}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+              >
+                <option value="">Auto — use top-selling product</option>
+                {products.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.title}{p.price ? ` — ₹${p.price}` : ''}
+                  </option>
+                ))}
+              </select>
+            )}
+            <p className="mt-1 text-xs text-gray-400">
+              Selected product is used for the AI ad copy.
             </p>
           </div>
 

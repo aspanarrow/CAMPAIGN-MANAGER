@@ -71,6 +71,10 @@ export const api = {
   
   createCampaign: (data: any) =>
     apiClient.post('/api/campaigns', data),
+
+  // Products (from Shopify — for the campaign form picker)
+  getProducts: (limit = 50) =>
+    apiClient.get('/api/products', { params: { limit } }),
   
   getCampaignMetrics: (id: string) =>
     apiClient.get(`/api/campaigns/${id}/metrics`),
