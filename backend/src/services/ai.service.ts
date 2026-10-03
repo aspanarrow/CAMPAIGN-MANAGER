@@ -77,7 +77,8 @@ class AIService {
       throw new Error('OpenCode is not configured. Set OPENCODE_API_KEY in the environment.');
     }
 
-    const res = await fetch(`${this.opencodeBaseUrl}/chat/completions`, {
+    const { httpFetch } = await import('../utils/http');
+    const res = await httpFetch(`${this.opencodeBaseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -91,19 +92,14 @@ class AIService {
         temperature,
         max_tokens: maxOutputTokens,
       }),
-    });
+    }, { label: 'opencode', timeoutMs: 60000, retries: 2 });
 
-    const text = await res.text();
+    const text = res.text;
     if (!res.ok) {
       throw new Error(`OpenCode request failed (HTTP ${res.status}): ${text.slice(0, 300)}`);
     }
 
-    let data: any;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      throw new Error(`OpenCode returned invalid JSON: ${text.slice(0, 200)}`);
-    }
+    const data: any = res.json;
 
     if (data.error) {
       const msg = data.error.message || JSON.stringify(data.error);

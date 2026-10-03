@@ -1,4 +1,5 @@
 import { logger } from '../utils/logger';
+import { httpFetch } from '../utils/http';
 
 /**
  * Meta (Facebook/Instagram) Ads API Service
@@ -121,7 +122,7 @@ class MetaService {
     try {
       const url = `${this.baseUrl}/${this.apiVersion}/${this.adAccountId}/campaigns`;
       
-      const response = await fetch(url, {
+      const res = await httpFetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -135,12 +136,12 @@ class MetaService {
           // Required by Meta when not using campaign-level (CBO) budgeting.
           is_adset_budget_sharing_enabled: false,
         }),
-      });
+      }, { label: 'meta:createCampaign' });
 
-      const data: any = await response.json();
+      const data: any = res.json;
 
-      if (data.error) {
-        throw new Error(this.formatError(data.error));
+      if (!res.ok || data.error) {
+        throw new Error(this.formatError(data.error) || `Meta ${res.status}`);
       }
 
       logger.info('Meta campaign created', {
@@ -208,18 +209,18 @@ class MetaService {
         body.bid_amount = Math.round(params.bidAmount * 100);
       }
 
-      const response = await fetch(url, {
+      const res = await httpFetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body),
-      });
+      }, { label: 'meta:createAdSet' });
 
-      const data: any = await response.json();
+      const data: any = res.json;
 
-      if (data.error) {
-        throw new Error(this.formatError(data.error));
+      if (!res.ok || data.error) {
+        throw new Error(this.formatError(data.error) || `Meta ${res.status}`);
       }
 
       logger.info('Meta ad set created', { adSetId: data.id, name: params.name });
@@ -252,7 +253,7 @@ class MetaService {
         };
       }
       
-      const response = await fetch(url, {
+      const res = await httpFetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -262,12 +263,12 @@ class MetaService {
           name: params.name,
           object_story_spec: spec,
         }),
-      });
+      }, { label: 'meta:createAdCreative' });
 
-      const data: any = await response.json();
+      const data: any = res.json;
 
-      if (data.error) {
-        throw new Error(data.error.message);
+      if (!res.ok || data.error) {
+        throw new Error(this.formatError(data.error) || `Meta ${res.status}`);
       }
 
       logger.info('Meta ad creative created', { creativeId: data.id });
@@ -290,7 +291,7 @@ class MetaService {
     try {
       const url = `${this.baseUrl}/${this.apiVersion}/${this.adAccountId}/ads`;
       
-      const response = await fetch(url, {
+      const res = await httpFetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -302,12 +303,12 @@ class MetaService {
           name: params.name,
           status: params.status,
         }),
-      });
+      }, { label: 'meta:createAd' });
 
-      const data: any = await response.json();
+      const data: any = res.json;
 
-      if (data.error) {
-        throw new Error(data.error.message);
+      if (!res.ok || data.error) {
+        throw new Error(this.formatError(data.error) || `Meta ${res.status}`);
       }
 
       logger.info('Meta ad created', { adId: data.id, name: params.name });
@@ -340,11 +341,11 @@ class MetaService {
 
       url += `?${params.toString()}`;
 
-      const response = await fetch(url);
-      const data: any = await response.json();
+      const res = await httpFetch(url, { method: 'GET' }, { label: 'meta:getCampaignInsights' });
+      const data: any = res.json;
 
-      if (data.error) {
-        throw new Error(data.error.message);
+      if (!res.ok || data.error) {
+        throw new Error(this.formatError(data.error) || `Meta ${res.status}`);
       }
 
       return data.data?.[0] || {};
@@ -361,7 +362,7 @@ class MetaService {
     try {
       const url = `${this.baseUrl}/${this.apiVersion}/${campaignId}`;
       
-      const response = await fetch(url, {
+      const res = await httpFetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -370,12 +371,12 @@ class MetaService {
           access_token: this.accessToken,
           status: status,
         }),
-      });
+      }, { label: 'meta:updateCampaignStatus' });
 
-      const data: any = await response.json();
+      const data: any = res.json;
 
-      if (data.error) {
-        throw new Error(this.formatError(data.error));
+      if (!res.ok || data.error) {
+        throw new Error(this.formatError(data.error) || `Meta ${res.status}`);
       }
 
       logger.info('Meta campaign status updated', { campaignId, status });
@@ -392,9 +393,9 @@ class MetaService {
   async getCampaignStatus(campaignId: string): Promise<string | null> {
     try {
       const url = `${this.baseUrl}/${this.apiVersion}/${campaignId}?fields=status,effective_status&access_token=${this.accessToken}`;
-      const response = await fetch(url);
-      const data: any = await response.json();
-      if (data.error) throw new Error(this.formatError(data.error));
+      const res = await httpFetch(url, { method: 'GET' }, { label: 'meta:getCampaignStatus' });
+      const data: any = res.json;
+      if (!res.ok || data.error) throw new Error(this.formatError(data.error) || `Meta ${res.status}`);
       return data.status || null;
     } catch (error: any) {
       logger.warn('Error reading Meta campaign status', { error: error.message, campaignId });
@@ -407,15 +408,15 @@ class MetaService {
    */
   async updateCampaignBudget(campaignId: string, dailyBudget: number): Promise<boolean> {
     const url = `${this.baseUrl}/${this.apiVersion}/${campaignId}`;
-    const response = await fetch(url, {
+    const res = await httpFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         access_token: this.accessToken,
         daily_budget: Math.round(dailyBudget * 100),
       }),
-    });
-    const data: any = await response.json();
+    }, { label: 'meta:updateCampaignBudget' });
+    const data: any = res.json;
     if (data.error) throw new Error(this.formatError(data.error));
     logger.info('Meta campaign budget updated', { campaignId, dailyBudget });
     return data.success || true;
@@ -426,15 +427,15 @@ class MetaService {
    */
   async updateAdSetBudget(adSetId: string, dailyBudget: number): Promise<boolean> {
     const url = `${this.baseUrl}/${this.apiVersion}/${adSetId}`;
-    const response = await fetch(url, {
+    const res = await httpFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         access_token: this.accessToken,
         daily_budget: Math.round(dailyBudget * 100),
       }),
-    });
-    const data: any = await response.json();
+    }, { label: 'meta:updateAdSetBudget' });
+    const data: any = res.json;
     if (data.error) throw new Error(this.formatError(data.error));
     logger.info('Meta ad set budget updated', { adSetId, dailyBudget });
     return data.success || true;
@@ -458,9 +459,9 @@ class MetaService {
         time_increment: '1', // one row per day
       });
       const url = `${this.baseUrl}/${this.apiVersion}/${objectId}/insights?${params.toString()}`;
-      const response = await fetch(url);
-      const data: any = await response.json();
-      if (data.error) throw new Error(this.formatError(data.error));
+      const res = await httpFetch(url, { method: 'GET' }, { label: 'meta:getInsightsByDay' });
+      const data: any = res.json;
+      if (!res.ok || data.error) throw new Error(this.formatError(data.error) || `Meta ${res.status}`);
       return data.data || [];
     } catch (error: any) {
       logger.warn('Error fetching daily insights', { error: error.message, objectId, level });
@@ -474,9 +475,9 @@ class MetaService {
   async listChildren(parentId: string, edge: 'adsets' | 'ads'): Promise<any[]> {
     try {
       const url = `${this.baseUrl}/${this.apiVersion}/${parentId}/${edge}?fields=id,name,status,daily_budget&limit=200&access_token=${this.accessToken}`;
-      const response = await fetch(url);
-      const data: any = await response.json();
-      if (data.error) throw new Error(this.formatError(data.error));
+      const res = await httpFetch(url, { method: 'GET' }, { label: 'meta:listChildren' });
+      const data: any = res.json;
+      if (!res.ok || data.error) throw new Error(this.formatError(data.error) || `Meta ${res.status}`);
       return data.data || [];
     } catch (error: any) {
       logger.warn('Error listing children', { error: error.message, parentId, edge });
@@ -490,8 +491,8 @@ class MetaService {
   async testConnection(): Promise<boolean> {
     try {
       const url = `${this.baseUrl}/${this.apiVersion}/me?access_token=${this.accessToken}`;
-      const response = await fetch(url);
-      const data: any = await response.json();
+      const res = await httpFetch(url, { method: 'GET' }, { label: 'meta:testConnection', retries: 1 });
+      const data: any = res.json;
       return !data.error;
     } catch (error) {
       logger.error('Meta connection test failed', { error });

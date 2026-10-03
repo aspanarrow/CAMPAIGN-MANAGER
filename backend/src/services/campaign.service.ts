@@ -131,6 +131,23 @@ class CampaignService {
         throw new Error('Campaign not found');
       }
 
+      // Idempotency guard (C3): never deploy the same campaign twice.
+      // A retried approval/webhook/rate-limited job must not create a second
+      // live campaign on Meta — one externalId, one deploy.
+      if (campaign.externalId) {
+        logger.info('Campaign already deployed — skipping (idempotent)', {
+          campaignId,
+          externalId: campaign.externalId,
+        });
+        if (campaign.status !== CampaignStatus.ACTIVE) {
+          await prisma.campaign.update({
+            where: { id: campaignId },
+            data: { status: CampaignStatus.ACTIVE },
+          });
+        }
+        return;
+      }
+
       if (campaign.platform === Platform.META) {
         await this.deployMetaCampaign(campaign, options);
       } else if (campaign.platform === Platform.GOOGLE_ADS) {
@@ -163,7 +180,10 @@ class CampaignService {
         specialAdCategories: [],
       });
 
-      // Update campaign with external ID
+      // Update campaign with external ID — single atomic write (C3).
+      // Note: Meta-side objects (campaign/adset) cannot be rolled back if this
+      // fails, but a partial DB write can no longer leave campaign without
+      // its externalId while Meta has a live campaign.
       await prisma.campaign.update({
         where: { id: campaign.id },
         data: { externalId: metaCampaign.id },
