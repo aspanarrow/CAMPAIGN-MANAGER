@@ -114,6 +114,39 @@ class MetaService {
   }
 
   /**
+   * Ad-set config per campaign objective. Meta rejects
+   * optimization_goal=OFFSITE_CONVERSIONS + pixel on non-conversion
+   * objectives (error 2490408 "Performance goal isn't available").
+   * Verified empirically on v26 (2026-10-03).
+   */
+  adSetConfigForObjective(objective: string): { optimizationGoal: string; promotedObject?: any } {
+    const odax = this.mapObjective(objective);
+    switch (odax) {
+      case 'OUTCOME_SALES':
+        return {
+          optimizationGoal: 'OFFSITE_CONVERSIONS',
+          promotedObject: process.env.META_PIXEL_ID
+            ? {
+                pixel_id: process.env.META_PIXEL_ID,
+                custom_event_type: process.env.META_CUSTOM_EVENT || 'PURCHASE',
+              }
+            : undefined,
+        };
+      case 'OUTCOME_LEADS':
+        return { optimizationGoal: 'LEAD_GENERATION' };
+      case 'OUTCOME_TRAFFIC':
+        return { optimizationGoal: 'LANDING_PAGE_VIEWS' };
+      case 'OUTCOME_ENGAGEMENT':
+        return { optimizationGoal: 'POST_ENGAGEMENT' };
+      case 'OUTCOME_APP_PROMOTION':
+        return { optimizationGoal: 'APP_INSTALLS' };
+      case 'OUTCOME_AWARENESS':
+      default:
+        return { optimizationGoal: 'REACH' };
+    }
+  }
+
+  /**
    * Create a new campaign
    */
   async createCampaign(params: {

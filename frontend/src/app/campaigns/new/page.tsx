@@ -9,6 +9,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 
 const campaignSchema = z.object({
+  name: z.string().optional(),
   platform: z.enum(['META', 'GOOGLE_ADS', 'EMAIL']),
   budget: z.number().positive(),
   dailyBudget: z.number().positive().optional(),
@@ -68,6 +69,22 @@ export default function NewCampaignPage() {
         <h1 className="text-3xl font-bold text-gray-900 mb-6">Create New Campaign</h1>
 
         <form onSubmit={handleSubmit(onSubmit)} className="bg-white rounded-lg shadow p-6 space-y-6">
+          {/* Campaign Name */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Campaign Name
+            </label>
+            <input
+              type="text"
+              {...register('name')}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+              placeholder="e.g. Neck Massager — Festive Push"
+            />
+            <p className="mt-1 text-xs text-gray-400">
+              Optional — leave blank to auto-generate from the product name.
+            </p>
+          </div>
+
           {/* Platform Selection */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">

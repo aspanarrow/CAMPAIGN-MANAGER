@@ -16,6 +16,7 @@ class CampaignService {
   async createCampaign(params: {
     platform: Platform;
     productIds?: string[];
+    name?: string;
     budget: number;
     dailyBudget?: number;
     objective: string;
@@ -53,10 +54,13 @@ class CampaignService {
 
       // 3. Create campaign in database
       const utmCampaign = `glowify_${Date.now().toString(36)}`;
+      // Use caller-provided name, or product name + date so repeated creates
+      // don't all look identical in the campaign list.
+      const autoName = `${product.title || 'Product'} — ${new Date().toISOString().slice(0, 10)}`;
       const campaign = await prisma.campaign.create({
         data: {
           platform: params.platform,
-          name: `${product.title || 'Product'} Campaign`,
+          name: params.name?.trim() || autoName,
           status: CampaignStatus.DRAFT,
           budget: params.budget,
           dailyBudget: params.dailyBudget,
@@ -195,11 +199,13 @@ class CampaignService {
       const minDaily = Number(process.env.META_MIN_DAILY_BUDGET || 100);
       const dailyBudget = Math.max(rawDaily, minDaily);
 
-      // Conversion objectives need a promoted object (pixel + event).
-      const pixelId = process.env.META_PIXEL_ID;
-      const promotedObject = pixelId
-        ? { pixel_id: pixelId, custom_event_type: process.env.META_CUSTOM_EVENT || 'PURCHASE' }
-        : undefined;
+      // Conversion objectives need a promoted object (pixel + event) —
+      // but ONLY for OUTCOME_SALES. Other objectives (AWARENESS, TRAFFIC,
+      // etc.) reject OFFSITE_CONVERSIONS (Meta error 2490408). Config is
+      // derived per-objective via metaService.adSetConfigForObjective.
+      const adSetConfig = metaService.adSetConfigForObjective(
+        campaign.objective || 'CONVERSIONS'
+      );
 
       const defaultTargeting = {
         geo_locations: { countries: ['IN'] },
@@ -218,9 +224,9 @@ class CampaignService {
         name: adSetName,
         dailyBudget,
         billingEvent: 'IMPRESSIONS',
-        optimizationGoal: 'OFFSITE_CONVERSIONS',
+        optimizationGoal: adSetConfig.optimizationGoal,
         bidStrategy: 'LOWEST_COST_WITHOUT_CAP',
-        promotedObject,
+        promotedObject: adSetConfig.promotedObject,
         targeting: hasTargeting ? campaign.targetAudience : defaultTargeting,
         status: 'PAUSED',
       });
