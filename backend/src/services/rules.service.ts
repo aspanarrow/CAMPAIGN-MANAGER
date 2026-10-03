@@ -164,8 +164,26 @@ class RulesEngine {
     const impressions = agg._sum.impressions || 0;
     const clicks = agg._sum.clicks || 0;
     const spend = Number(agg._sum.spend || 0);
-    const revenue = Number(agg._sum.revenue || 0);
+    const metaRevenue = Number(agg._sum.revenue || 0);
     const conversions = agg._sum.conversions || 0;
+
+    // C1 wiring: prefer attributed revenue + contribution margin from
+    // OrderEconomics (Shopify orders matched by UTM + COD/RTO cost stack).
+    // Meta-reported revenue overcounts — it counts orders that may be RTO.
+    const econ = await prisma.orderEconomics.aggregate({
+      where: { campaignId },
+      _sum: { netRevenue: true, contributionMargin: true },
+      _count: { _all: true },
+    });
+    const attributedRevenue = Number(econ._sum.netRevenue || 0);
+    const contributionMargin = Number(econ._sum.contributionMargin || 0);
+    const hasEcon = econ._count._all > 0;
+
+    // Use attributed revenue when OrderEconomics has rows for this campaign;
+    // otherwise fall back to Meta-reported revenue (zero-attribution case).
+    const revenue = hasEcon ? attributedRevenue : metaRevenue;
+    const roas = spend > 0 ? Number((revenue / spend).toFixed(2)) : null;
+    const cmPercent = revenue > 0 ? Number(((contributionMargin / revenue) * 100).toFixed(2)) : null;
 
     return {
       impressions,
@@ -173,9 +191,13 @@ class RulesEngine {
       conversions,
       spend,
       revenue,
+      contributionMargin: hasEcon ? contributionMargin : null,
+      cmPercent,
+      attributionSource: hasEcon ? 'order_economics' : 'meta_reported',
+      orders: econ._count._all,
       ctr: impressions > 0 ? Number(((clicks / impressions) * 100).toFixed(4)) : null,
       cpc: clicks > 0 ? Number((spend / clicks).toFixed(2)) : null,
-      roas: spend > 0 ? Number((revenue / spend).toFixed(2)) : null,
+      roas,
     };
   }
 }

@@ -8,7 +8,10 @@ import { httpFetch } from '../utils/http';
 class MetaService {
   private accessToken: string;
   private adAccountId: string;
-  private apiVersion: string = 'v18.0';
+  // Meta Graph API version. v18.0 is deprecated; verified against the live
+  // account on 2026-10-03: v26.0 works (HTTP 200), v27.0 not yet available.
+  // Override with META_API_VERSION when Meta ships a new one.
+  private apiVersion: string = process.env.META_API_VERSION || 'v26.0';
   private baseUrl: string = 'https://graph.facebook.com';
 
   constructor() {
@@ -417,9 +420,16 @@ class MetaService {
       }),
     }, { label: 'meta:updateCampaignBudget' });
     const data: any = res.json;
-    if (data.error) throw new Error(this.formatError(data.error));
+    // NINA fix: httpFetch returns on 4xx instead of throwing — a token-expiry
+    // 403 with no data.error would have returned true ("budget updated").
+    if (!res.ok || data.error) {
+      throw new Error(this.formatError(data.error) || `Meta ${res.status}: ${res.text.slice(0, 200)}`);
+    }
+    if (data.success !== true && data.success !== undefined) {
+      throw new Error(`Meta did not confirm campaign budget update (success=${data.success})`);
+    }
     logger.info('Meta campaign budget updated', { campaignId, dailyBudget });
-    return data.success || true;
+    return true;
   }
 
   /**
@@ -436,9 +446,15 @@ class MetaService {
       }),
     }, { label: 'meta:updateAdSetBudget' });
     const data: any = res.json;
-    if (data.error) throw new Error(this.formatError(data.error));
+    // Same false-success fix as updateCampaignBudget (see above).
+    if (!res.ok || data.error) {
+      throw new Error(this.formatError(data.error) || `Meta ${res.status}: ${res.text.slice(0, 200)}`);
+    }
+    if (data.success !== true && data.success !== undefined) {
+      throw new Error(`Meta did not confirm ad set budget update (success=${data.success})`);
+    }
     logger.info('Meta ad set budget updated', { adSetId, dailyBudget });
-    return data.success || true;
+    return true;
   }
 
   /**
