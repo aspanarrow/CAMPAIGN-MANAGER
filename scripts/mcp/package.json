@@ -1,0 +1,20 @@
+{
+  "name": "glowify-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP server for CAMPAIGN-MANAGER — connect Claude/Cursor/any MCP client to your marketing app.",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs",
+    "stdio": "node server.mjs --stdio"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "express": "^4.19.0",
+    "zod": "^3.23.0"
+  }
+}
