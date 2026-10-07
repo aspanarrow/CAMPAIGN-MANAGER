@@ -20,6 +20,13 @@ const envSchema = z.object({
   // API Authentication
   API_KEY: z.string().min(1, 'API_KEY is required for authentication'),
 
+  // C2 — JWT auth
+  JWT_SECRET: z.string().optional(),
+  JWT_EXPIRES_IN: z.string().optional(),
+
+  // C4 — webhook verification
+  META_WEBHOOK_VERIFY_TOKEN: z.string().optional(),
+
   // Shopify
   SHOPIFY_STORE_URL: z.string().min(1, 'SHOPIFY_STORE_URL is required'),
   SHOPIFY_API_KEY: z.string().optional(),

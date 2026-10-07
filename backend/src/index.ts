@@ -6,13 +6,18 @@ import { logger } from './utils/logger';
 import { errorHandler } from './middleware/errorHandler';
 import { rateLimiter } from './middleware/rateLimiter';
 import { validateEnv } from './config/validateEnv';
+import { initMonitoring } from './utils/monitoring';
 import apiRoutes from './api/routes';
+import { shopifyWebhookHandler, metaWebhookVerify, metaWebhookHandler } from './api/webhooks.routes';
 
 // Load environment variables
 dotenv.config();
 
 // Validate environment variables before starting
 validateEnv();
+
+// Init monitoring (Sentry if SENTRY_DSN set, else local logs)
+initMonitoring().catch(() => {});
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -37,7 +42,23 @@ app.use(cors({
   credentials: true,
 }));
 
-// Body parsing
+// Webhooks need the RAW body for HMAC verification (C4).
+// MUST be mounted BEFORE express.json() — otherwise the raw bytes are lost.
+app.post(
+  '/api/webhooks/shopify',
+  express.raw({ type: 'application/json', limit: '5mb' }),
+  (req, _res, next) => { (req as any).rawBody = req.body; next(); },
+  shopifyWebhookHandler
+);
+app.get('/api/webhooks/meta', metaWebhookVerify);
+app.post(
+  '/api/webhooks/meta',
+  express.raw({ type: 'application/json', limit: '5mb' }),
+  (req, _res, next) => { (req as any).rawBody = req.body; next(); },
+  metaWebhookHandler
+);
+
+// Body parsing (after webhooks)
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 

@@ -31,8 +31,9 @@ describe('Authentication Middleware', () => {
 
     expect(nextFunction).toHaveBeenCalled();
     expect((mockRequest as any).user).toEqual({
-      apiKey: 'test-api-key-123',
+      role: 'ADMIN',
       authenticated: true,
+      method: 'api-key',
     });
   });
 
@@ -45,7 +46,7 @@ describe('Authentication Middleware', () => {
     const error = (nextFunction as jest.Mock).mock.calls[0][0];
     expect(error).toBeInstanceOf(AppError);
     expect(error.statusCode).toBe(401);
-    expect(error.message).toContain('API key is required');
+    expect(error.message).toContain('Authentication required');
   });
 
   it('should fail authentication with invalid API key', () => {

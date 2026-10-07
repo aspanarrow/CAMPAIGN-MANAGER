@@ -7,6 +7,8 @@ import campaignsRoutes from './campaigns.routes';
 import approvalsRoutes from './approvals.routes';
 import automationRoutes from './automation.routes';
 import profitRoutes from './profit.routes';
+import authRoutes from './auth.routes';
+import labsRoutes from './labs.routes';
 import { CampaignStatus } from '@prisma/client';
 
 const router = Router();
@@ -21,11 +23,15 @@ router.get('/auth/verify', authenticate, (_req, res) => {
   res.json({ authenticated: true });
 });
 
-// All API routes require authentication
+// Auth routes (public — register/login)
+router.use('/auth', authRoutes);
+
+// All API routes below require authentication
 router.use('/campaigns', authenticate, campaignsRoutes);
 router.use('/approvals', authenticate, approvalsRoutes);
 router.use('/automation', authenticate, automationRoutes);
 router.use('/profit', authenticate, profitRoutes);
+router.use('/labs', labsRoutes); // labs router applies authenticate internally
 
 /**
  * GET /api/products

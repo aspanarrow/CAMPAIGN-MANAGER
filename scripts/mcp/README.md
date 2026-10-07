@@ -117,6 +117,14 @@ Accept: application/json, text/event-stream
 | `get_audit_log` | Audit trail |
 | `get_analytics` | Campaign analytics |
 | `optimize_campaign` | AI se optimization suggestion |
+| `list_abtests` | A/B tests list |
+| `create_abtest` | Naya A/B test banao |
+| `complete_abtest` | Test complete karo, winner auto-pick |
+| `generate_content` | AI se content generate karo (ad copy, email, social) |
+| `list_content` | Generated content list |
+| `list_emails` | Email campaigns list |
+| `create_email` | Naya email campaign banao |
+| `send_email` | Email campaign send karo |
 
 ## Security Notes
 

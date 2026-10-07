@@ -108,7 +108,7 @@ function fail(error) {
 /* -------------------------------------------------------------------------- */
 
 function buildServer() {
-  const server = new McpServer({ name: 'glowify', version: '1.0.0' });
+  const server = new McpServer({ name: 'glowify', version: '1.1.0' });
 
   // ---------- System ----------
   server.tool('health', 'Backend health check — verify the marketing app is running.', {}, async () => {
@@ -461,6 +461,112 @@ function buildServer() {
     { id: z.string().describe('Campaign ID') },
     async ({ id }) => {
       try { return ok(await api('POST', `/campaigns/${id}/optimize`, {})); }
+      catch (e) { return fail(e); }
+    }
+  );
+
+  // ---------- Labs: A/B tests ----------
+  server.tool(
+    'list_abtests',
+    'List all A/B tests with their ads and performance.',
+    {},
+    async () => {
+      try { return ok(await api('GET', '/labs/abtests')); }
+      catch (e) { return fail(e); }
+    }
+  );
+
+  server.tool(
+    'create_abtest',
+    'Create an A/B test comparing 2+ ads.',
+    {
+      name: z.string().describe('Test name'),
+      adIds: z.array(z.string()).describe('At least 2 ad IDs to compare'),
+      trafficSplit: z.number().optional().describe('Traffic % for variant A (default 50)'),
+    },
+    async ({ name, adIds, trafficSplit }) => {
+      try { return ok(await api('POST', '/labs/abtests', { name, adIds, trafficSplit })); }
+      catch (e) { return fail(e); }
+    }
+  );
+
+  server.tool(
+    'complete_abtest',
+    'Complete an A/B test — auto-picks winner by conversions/CTR.',
+    { id: z.string().describe('A/B test ID') },
+    async ({ id }) => {
+      try { return ok(await api('POST', `/labs/abtests/${id}/complete`, {})); }
+      catch (e) { return fail(e); }
+    }
+  );
+
+  // ---------- Labs: AI content (H4) ----------
+  server.tool(
+    'generate_content',
+    'Generate marketing content with AI: AD_COPY, PRODUCT_DESCRIPTION, EMAIL_SUBJECT, EMAIL_BODY, SOCIAL_POST.',
+    {
+      type: z.enum(['AD_COPY', 'PRODUCT_DESCRIPTION', 'EMAIL_SUBJECT', 'EMAIL_BODY', 'SOCIAL_POST']).describe('Content type'),
+      prompt: z.string().describe('Brief / prompt for the AI'),
+      productName: z.string().optional().describe('Product name'),
+      productDescription: z.string().optional().describe('Product description'),
+      targetAudience: z.string().optional().describe('Target audience'),
+      tone: z.string().optional().describe('Tone (professional/casual/luxury/friendly)'),
+    },
+    async (args) => {
+      try { return ok(await api('POST', '/labs/content/generate', args)); }
+      catch (e) { return fail(e); }
+    }
+  );
+
+  server.tool(
+    'list_content',
+    'List AI-generated content (filter by type/status).',
+    {
+      type: z.string().optional().describe('Filter by type'),
+      status: z.string().optional().describe('Filter by status'),
+    },
+    async ({ type, status }) => {
+      try {
+        const q = new URLSearchParams();
+        if (type) q.set('type', type);
+        if (status) q.set('status', status);
+        return ok(await api('GET', `/labs/content?${q.toString()}`));
+      } catch (e) { return fail(e); }
+    }
+  );
+
+  // ---------- Labs: Email campaigns ----------
+  server.tool(
+    'list_emails',
+    'List email campaigns.',
+    {},
+    async () => {
+      try { return ok(await api('GET', '/labs/emails')); }
+      catch (e) { return fail(e); }
+    }
+  );
+
+  server.tool(
+    'create_email',
+    'Create an email campaign.',
+    {
+      name: z.string().describe('Campaign name'),
+      subject: z.string().describe('Email subject'),
+      body: z.string().describe('Email body (HTML or text)'),
+      listId: z.string().optional().describe('Email list ID'),
+    },
+    async (args) => {
+      try { return ok(await api('POST', '/labs/emails', args)); }
+      catch (e) { return fail(e); }
+    }
+  );
+
+  server.tool(
+    'send_email',
+    'Send an email campaign (via Klaviyo if configured, else marked sent).',
+    { id: z.string().describe('Email campaign ID') },
+    async ({ id }) => {
+      try { return ok(await api('POST', `/labs/emails/${id}/send`, {})); }
       catch (e) { return fail(e); }
     }
   );

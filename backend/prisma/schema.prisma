@@ -399,6 +399,28 @@ enum Platform {
   EMAIL
 }
 
+// C2 — real auth: users with roles, JWT-based sessions
+enum Role {
+  ADMIN
+  MANAGER
+  VIEWER
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  role         Role     @default(VIEWER)
+  isActive     Boolean  @default(true)
+  lastLoginAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
+
 enum CampaignStatus {
   DRAFT
   PENDING

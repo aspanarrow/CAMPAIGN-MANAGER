@@ -1,18 +1,35 @@
 import { Request, Response, NextFunction } from 'express';
 import { AppError } from './errorHandler';
 import { logger } from '../utils/logger';
+import { verifyToken } from '../services/auth.service';
 
 /**
- * API Key Authentication Middleware
- * Validates API key from request header
+ * Authentication Middleware (C2)
+ * Accepts EITHER:
+ *   1. JWT Bearer token  → Authorization: Bearer <jwt>  (user login)
+ *   2. Legacy API key   → x-api-key: <key>              (scripts / MCP / automation)
  */
 export const authenticate = (req: Request, res: Response, next: NextFunction) => {
   try {
-    // Get API key from header
+    // 1. Try JWT Bearer first
+    const authHeader = req.headers.authorization;
+    if (authHeader?.startsWith('Bearer ')) {
+      const payload = verifyToken(authHeader.slice(7));
+      (req as any).user = {
+        userId: payload.userId,
+        email: payload.email,
+        role: payload.role,
+        authenticated: true,
+        method: 'jwt',
+      };
+      return next();
+    }
+
+    // 2. Fall back to legacy API key
     const apiKey = req.headers['x-api-key'] as string;
 
     if (!apiKey) {
-      throw new AppError('API key is required. Please provide x-api-key header.', 401, 'UNAUTHORIZED');
+      throw new AppError('Authentication required. Provide Bearer token or x-api-key header.', 401, 'UNAUTHORIZED');
     }
 
     // Get expected API key from environment
@@ -29,16 +46,31 @@ export const authenticate = (req: Request, res: Response, next: NextFunction) =>
       throw new AppError('Invalid API key', 401, 'UNAUTHORIZED');
     }
 
-    // Add user info to request (for future multi-user support)
+    // Legacy key acts as ADMIN (service-level access for scripts/MCP)
     (req as any).user = {
-      apiKey,
+      role: 'ADMIN',
       authenticated: true,
+      method: 'api-key',
     };
 
     next();
   } catch (error) {
     next(error);
   }
+};
+
+/**
+ * Role guard — require one of the given roles.
+ * Usage: router.post('/x', authenticate, requireRole('ADMIN'), handler)
+ */
+export const requireRole = (...roles: string[]) => {
+  return (req: Request, _res: Response, next: NextFunction) => {
+    const role = (req as any).user?.role;
+    if (!role || !roles.includes(role)) {
+      return next(new AppError('Forbidden: insufficient permissions', 403, 'FORBIDDEN'));
+    }
+    next();
+  };
 };
 
 /**

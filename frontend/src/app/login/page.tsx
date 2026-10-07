@@ -9,11 +9,16 @@ import { Button } from '@/components/Button';
 import { HelpTooltip } from '@/components/HelpTooltip';
 
 export default function LoginPage() {
+  const [mode, setMode] = useState<'account' | 'apikey'>('account');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isRegister, setIsRegister] = useState(false);
+  const [name, setName] = useState('');
   const [apiKey, setApiKey] = useState(process.env.NEXT_PUBLIC_API_KEY || '');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const { setApiKey: setAuthApiKey, isAuthenticated, isLoading: authLoading } = useAuth();
+  const { setApiKey: setAuthApiKey, setSession, isAuthenticated, isLoading: authLoading } = useAuth();
   const router = useRouter();
 
   // If the user is already signed in, skip the login screen
@@ -22,6 +27,24 @@ export default function LoginPage() {
       router.replace('/campaigns');
     }
   }, [authLoading, isAuthenticated, router]);
+
+  const handleAccountSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      const res = isRegister
+        ? await api.register(email.trim(), password, name.trim() || undefined)
+        : await api.login(email.trim(), password);
+      setSession(res.data.token, res.data.user);
+      router.push('/campaigns');
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Login failed. Please check your credentials.');
+      console.error('Login error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,6 +82,94 @@ export default function LoginPage() {
 
         {/* Login Card */}
         <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-soft border border-gray-100 p-8">
+          {/* Mode tabs */}
+          <div className="flex rounded-xl bg-gray-100 p-1 mb-6">
+            <button
+              type="button"
+              onClick={() => setMode('account')}
+              className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${mode === 'account' ? 'bg-white shadow text-gray-900' : 'text-gray-500'}`}
+            >
+              Email Login
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('apikey')}
+              className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${mode === 'apikey' ? 'bg-white shadow text-gray-900' : 'text-gray-500'}`}
+            >
+              API Key
+            </button>
+          </div>
+
+          {mode === 'account' ? (
+          <form onSubmit={handleAccountSubmit} className="space-y-5">
+            {isRegister && (
+              <div>
+                <label htmlFor="name" className="block text-sm font-semibold text-gray-700 mb-2">Name</label>
+                <input
+                  id="name"
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all text-sm"
+                  placeholder="Your name"
+                  autoFocus
+                />
+              </div>
+            )}
+            <div>
+              <label htmlFor="email" className="block text-sm font-semibold text-gray-700 mb-2">Email</label>
+              <input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all text-sm"
+                placeholder="you@company.com"
+                required
+                autoFocus={!isRegister}
+              />
+            </div>
+            <div>
+              <label htmlFor="password" className="block text-sm font-semibold text-gray-700 mb-2">Password</label>
+              <div className="relative">
+                <input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-4 py-3 pr-12 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all text-sm"
+                  placeholder={isRegister ? 'Min 8 characters' : 'Your password'}
+                  required
+                  minLength={isRegister ? 8 : undefined}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                  aria-label="Toggle password visibility"
+                >
+                  {showPassword ? '🙈' : '👁️'}
+                </button>
+              </div>
+            </div>
+
+            {error && (
+              <div className="bg-red-50 border-2 border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm font-medium">{error}</div>
+            )}
+
+            <Button type="submit" variant="primary" size="lg" fullWidth isLoading={loading} disabled={!email || !password}>
+              {loading ? 'Please wait...' : isRegister ? 'Create Account' : 'Sign In'}
+            </Button>
+
+            <p className="text-center text-sm text-gray-500">
+              {isRegister ? 'Already have an account? ' : "Don't have an account? "}
+              <button type="button" onClick={() => { setIsRegister(!isRegister); setError(''); }} className="font-semibold text-primary-600 hover:text-primary-700">
+                {isRegister ? 'Sign in' : 'Register'}
+              </button>
+            </p>
+            <p className="text-center text-xs text-gray-400">First registered user becomes Admin automatically.</p>
+          </form>
+          ) : (
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
               <div className="flex items-center justify-between mb-2">
@@ -131,6 +242,7 @@ export default function LoginPage() {
               {loading ? 'Verifying...' : 'Sign In'}
             </Button>
           </form>
+          )}
 
           {/* Help Section */}
           <div className="mt-6 pt-6 border-t border-gray-200">

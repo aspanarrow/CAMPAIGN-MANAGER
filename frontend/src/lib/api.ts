@@ -10,14 +10,17 @@ const apiClient = axios.create({
   },
 });
 
-// Request interceptor for auth - dynamically get API key
+// Request interceptor for auth - dynamically get credentials (JWT preferred, API key fallback)
 apiClient.interceptors.request.use(
   (config) => {
-    // Get API key from localStorage (client-side only)
+    // Get credentials from localStorage (client-side only)
     if (typeof window !== 'undefined') {
+      const token = localStorage.getItem('auth_token');
       const apiKey = localStorage.getItem('api_key');
-      // Don't override a key explicitly passed by the caller (e.g. the login screen)
-      if (apiKey && !config.headers['x-api-key']) {
+      if (token && !config.headers['Authorization']) {
+        config.headers['Authorization'] = `Bearer ${token}`;
+      } else if (apiKey && !config.headers['x-api-key']) {
+        // Don't override a key explicitly passed by the caller (e.g. the login screen)
         config.headers['x-api-key'] = apiKey;
       }
     }
@@ -33,9 +36,11 @@ apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Handle unauthorized - clear API key and redirect (but not while on the login page)
+      // Handle unauthorized - clear credentials and redirect (but not while on the login page)
       if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
         localStorage.removeItem('api_key');
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('auth_user');
         window.location.href = '/login';
       }
     }
@@ -54,6 +59,29 @@ export const api = {
       '/api/auth/verify',
       apiKey ? { headers: { 'x-api-key': apiKey } } : undefined
     ),
+
+  // C2 — JWT auth
+  register: (email: string, password: string, name?: string) =>
+    apiClient.post('/api/auth/register', { email, password, name }),
+  login: (email: string, password: string) =>
+    apiClient.post('/api/auth/login', { email, password }),
+  me: () => apiClient.get('/api/auth/me'),
+
+  // Labs — A/B tests, AI content, emails
+  getABTests: () => apiClient.get('/api/labs/abtests'),
+  createABTest: (data: { name: string; adIds: string[]; trafficSplit?: number; endDate?: string }) =>
+    apiClient.post('/api/labs/abtests', data),
+  completeABTest: (id: string) => apiClient.post(`/api/labs/abtests/${id}/complete`),
+  getContent: (params?: { type?: string; status?: string }) =>
+    apiClient.get('/api/labs/content', { params }),
+  generateContent: (data: { type: string; prompt: string; productName?: string; productDescription?: string; targetAudience?: string; tone?: string; platform?: string }) =>
+    apiClient.post('/api/labs/content/generate', data),
+  updateContentStatus: (id: string, status: string) =>
+    apiClient.patch(`/api/labs/content/${id}`, { status }),
+  getEmails: () => apiClient.get('/api/labs/emails'),
+  createEmail: (data: { name: string; subject: string; body: string; listId?: string; scheduledAt?: string }) =>
+    apiClient.post('/api/labs/emails', data),
+  sendEmail: (id: string) => apiClient.post(`/api/labs/emails/${id}/send`),
 
   // Campaigns
   getCampaigns: (params?: { platform?: string; status?: string; limit?: number; offset?: number }) => {
