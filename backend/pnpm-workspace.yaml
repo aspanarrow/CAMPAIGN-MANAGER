@@ -4,3 +4,9 @@ allowBuilds:
   esbuild: set this to true or false
   msgpackr-extract: set this to true or false
   prisma: set this to true or false
+onlyBuiltDependencies:
+  - '@prisma/client'
+  - '@prisma/engines'
+  - esbuild
+  - msgpackr-extract
+  - prisma

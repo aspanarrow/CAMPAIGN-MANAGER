@@ -23,7 +23,7 @@ jobs:
           node-version: 22
           cache: pnpm
           cache-dependency-path: backend/pnpm-lock.yaml
-      - run: pnpm install --frozen-lockfile --ignore-scripts=false
+      - run: pnpm install --frozen-lockfile
       - run: npx prisma generate
       - run: npx tsc --noEmit
       - run: pnpm test
@@ -49,5 +49,5 @@ jobs:
           node-version: 22
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
-      - run: pnpm install --frozen-lockfile --ignore-scripts=false
+      - run: pnpm install --frozen-lockfile
       - run: npx tsc --noEmit
